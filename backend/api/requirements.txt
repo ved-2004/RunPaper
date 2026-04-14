@@ -1,0 +1,34 @@
+# RunPaper Backend Dependencies
+
+# ── Web framework ─────────────────────────────────────────
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9
+
+# ── Data validation ───────────────────────────────────────
+pydantic==2.7.1
+
+# ── LLM providers (env-driven — see llm_client.py) ────────
+anthropic>=0.50.0            # LLM_PROVIDER=anthropic
+openai>=1.0.0                # LLM_PROVIDER=openai
+google-generativeai>=0.8.0   # LLM_PROVIDER=gemini
+
+# ── PDF parsing ───────────────────────────────────────────
+PyMuPDF==1.24.3           # PDF text extraction (fitz)
+
+# ── HTTP clients ──────────────────────────────────────────
+httpx==0.27.0             # Async HTTP + test client
+
+# ── Auth ──────────────────────────────────────────────────
+python-jose[cryptography]==3.3.0   # JWT encode/decode
+
+# ── Cloud storage ──────────────────────────────────────────
+supabase==2.5.3                    # Supabase Python client (storage + DB)
+psycopg2-binary==2.9.9             # Direct Postgres connection for migration runner
+apscheduler==3.10.4                # Scheduled TTL cleanup job
+
+# ── Utilities ─────────────────────────────────────────────
+python-dotenv==1.0.1
+
+# ── RAG / Vector store ────────────────────────────────────
+chromadb>=0.5.0           # Persistent vector store + default ONNX embeddings
