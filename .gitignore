@@ -55,6 +55,8 @@ backend/api/data/chromadb/
 # ── Uploads / local data ──────────────────────────────────
 backend/api/uploads/
 backend/api/data/uploads/
+backend/api/data/
+backend/api/tests/
 
 # ── Logs ──────────────────────────────────────────────────
 *.log
