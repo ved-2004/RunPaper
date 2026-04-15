@@ -18,7 +18,7 @@ const mainNav = [
 
 const workflowNav = [
   { title: "Upload Paper", url: "/upload", icon: Upload },
-  { title: "My Papers", url: "/papers", icon: FileText },
+  { title: "My Papers", url: "/dashboard", icon: FileText },
 ];
 
 const systemNav = [

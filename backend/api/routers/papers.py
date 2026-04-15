@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import logging
+import re
 import zipfile
 from datetime import datetime, timezone
 from typing import Optional
@@ -32,6 +33,23 @@ from api.chat.faq import generate_faq
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/papers", tags=["papers"])
+
+# ── arXiv ID detection ────────────────────────────────────────────────────────
+
+_ARXIV_PATTERNS = [
+    re.compile(r'arXiv[:\s]+(\d{4}\.\d{4,5}(?:v\d+)?)', re.IGNORECASE),
+    re.compile(r'arxiv\.org/(?:abs|pdf)/(\d{4}\.\d{4,5}(?:v\d+)?)', re.IGNORECASE),
+]
+
+
+def _detect_arxiv_id(text: str) -> Optional[str]:
+    """Search raw PDF text for an arXiv identifier like 2201.11903."""
+    for pattern in _ARXIV_PATTERNS:
+        m = pattern.search(text)
+        if m:
+            # Strip version suffix (v1, v2 …) for a stable URL
+            return m.group(1).split("v")[0]
+    return None
 
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
 
@@ -98,6 +116,11 @@ async def _run_pipeline(paper_id: str, pdf_bytes: bytes) -> None:
         paper_text = extract_text_from_pdf(pdf_bytes)
         reproducibility = await analyze_reproducibility(extraction, paper_text)
 
+        # Detect arXiv ID from raw text for PDF fallback
+        arxiv_id = _detect_arxiv_id(paper_text)
+        if arxiv_id:
+            logger.info("Detected arXiv ID: %s", arxiv_id)
+
         # Step 4: Flowchart + code annotations (Learn tab)
         flowchart = await generate_flowchart(extraction, code_scaffold)
 
@@ -109,6 +132,7 @@ async def _run_pipeline(paper_id: str, pdf_bytes: bytes) -> None:
             status="complete",
             title=extraction.get("title"),
             authors_json=extraction.get("authors"),
+            arxiv_id=arxiv_id,
             extraction_json=extraction,
             code_scaffold_json=code_scaffold,
             reproducibility_json=reproducibility,

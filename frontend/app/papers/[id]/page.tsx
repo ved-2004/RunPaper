@@ -3,14 +3,14 @@
 import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { getPaper, getPdfUrl } from "@/lib/paperApi";
+import { getPaper, getPdfUrl, downloadZip } from "@/lib/paperApi";
 import AppLayout from "@/components/layout/AppLayout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   Loader2, AlertCircle, FileText, Code2, GitCompare,
-  Workflow, FileIcon, PanelRight, X, MessageSquare,
+  Workflow, FileIcon, PanelRight, X, MessageSquare, Download,
 } from "lucide-react";
 import { ExtractionTab } from "@/components/runpaper/ExtractionTab";
 import { CodeTab } from "@/components/runpaper/CodeTab";
@@ -77,6 +77,22 @@ function CompanionButton({
 export default function PaperPage() {
   const { id } = useParams<{ id: string }>();
   const [companion, setCompanion] = useState<Companion>("none");
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      const blob = await downloadZip(id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `runpaper_${id}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const { data: paper, isLoading, error } = useQuery({
     queryKey: ["paper", id],
@@ -127,15 +143,31 @@ export default function PaperPage() {
         ) : paper ? (
           <>
             {/* Paper header */}
-            <div className="mb-5">
-              <h1 className="text-xl font-bold tracking-tight truncate">
-                {paper.extraction?.title || "Paper Results"}
-              </h1>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                {paper.extraction?.authors?.slice(0, 3).join(", ")}
-                {(paper.extraction?.authors?.length ?? 0) > 3 ? " et al." : ""}
-                {paper.extraction?.year ? ` · ${paper.extraction.year}` : ""}
-              </p>
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h1 className="text-xl font-bold tracking-tight truncate">
+                  {paper.extraction?.title || "Paper Results"}
+                </h1>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  {paper.extraction?.authors?.slice(0, 3).join(", ")}
+                  {(paper.extraction?.authors?.length ?? 0) > 3 ? " et al." : ""}
+                  {paper.extraction?.year ? ` · ${paper.extraction.year}` : ""}
+                </p>
+              </div>
+              {paper.status === "complete" && paper.code_scaffold && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0 gap-1.5"
+                  onClick={handleDownload}
+                  disabled={downloading}
+                >
+                  {downloading
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : <Download className="h-3.5 w-3.5" />}
+                  Download code
+                </Button>
+              )}
             </div>
 
             <Tabs defaultValue="learn">

@@ -83,6 +83,7 @@ async def update_paper(
     status: str,
     title: Optional[str] = None,
     authors_json: Optional[list] = None,
+    arxiv_id: Optional[str] = None,
     extraction_json: Optional[dict] = None,
     code_scaffold_json: Optional[dict] = None,
     reproducibility_json: Optional[list] = None,
@@ -94,6 +95,8 @@ async def update_paper(
     updates: dict[str, Any] = {"status": status}
     if title is not None:
         updates["title"] = title
+    if arxiv_id is not None:
+        updates["arxiv_id"] = arxiv_id
     if authors_json is not None:
         updates["authors_json"] = json.loads(json.dumps(authors_json))
     if extraction_json is not None:
