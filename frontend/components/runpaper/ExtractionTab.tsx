@@ -2,7 +2,13 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { TexMath } from "@/components/ui/katex-math";
+import { ExternalLink } from "lucide-react";
 import type { PaperExtraction } from "@/types/paper";
+
+function datasetSearchUrl(name: string): string {
+  return `https://paperswithcode.com/datasets?q=${encodeURIComponent(name)}`;
+}
 
 export function ExtractionTab({ extraction }: { extraction: PaperExtraction }) {
   return (
@@ -55,10 +61,12 @@ export function ExtractionTab({ extraction }: { extraction: PaperExtraction }) {
             )}
             {extraction.method.key_equations?.length > 0 && (
               <div>
-                <p className="text-xs font-medium text-muted-foreground mb-1">Key Equations</p>
-                <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground mb-2">Key Equations</p>
+                <div className="space-y-2">
                   {extraction.method.key_equations.map((eq, i) => (
-                    <code key={i} className="block text-xs bg-muted px-2 py-1 rounded font-mono">{eq}</code>
+                    <div key={i} className="rounded-lg bg-muted px-4 py-3 overflow-x-auto">
+                      <TexMath tex={eq} display />
+                    </div>
                   ))}
                 </div>
               </div>
@@ -74,24 +82,28 @@ export function ExtractionTab({ extraction }: { extraction: PaperExtraction }) {
             <CardTitle className="text-sm">Hyperparameters</CardTitle>
           </CardHeader>
           <CardContent>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left text-xs font-medium text-muted-foreground pb-2">Parameter</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground pb-2">Value</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground pb-2">Source</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {extraction.hyperparameters.map((hp, i) => (
-                  <tr key={i}>
-                    <td className="py-2 font-mono text-xs">{hp.name}</td>
-                    <td className="py-2 font-mono text-xs text-primary">{hp.value}</td>
-                    <td className="py-2 text-xs text-muted-foreground">{hp.source}</td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="text-left text-xs font-medium text-muted-foreground pb-2 pr-4">Parameter</th>
+                    <th className="text-left text-xs font-medium text-muted-foreground pb-2 pr-4">Value</th>
+                    <th className="text-left text-xs font-medium text-muted-foreground pb-2 pr-4">Source</th>
+                    <th className="text-left text-xs font-medium text-muted-foreground pb-2">Description</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {extraction.hyperparameters.map((hp, i) => (
+                    <tr key={i}>
+                      <td className="py-2.5 pr-4 font-mono text-xs">{hp.name}</td>
+                      <td className="py-2.5 pr-4 font-mono text-xs text-primary font-medium">{hp.value}</td>
+                      <td className="py-2.5 pr-4 text-xs text-muted-foreground whitespace-nowrap">{hp.source}</td>
+                      <td className="py-2.5 text-xs text-muted-foreground">{hp.description ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -104,10 +116,20 @@ export function ExtractionTab({ extraction }: { extraction: PaperExtraction }) {
           </CardHeader>
           <CardContent className="space-y-2">
             {extraction.datasets.map((ds, i) => (
-              <div key={i} className="flex items-center gap-3 p-2 rounded-lg bg-secondary/30">
-                <Badge variant="secondary" className="text-xs">{ds.name}</Badge>
+              <div key={i} className="flex items-center gap-3 p-2.5 rounded-lg bg-secondary/30">
+                <a
+                  href={datasetSearchUrl(ds.name)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                >
+                  {ds.name}
+                  <ExternalLink className="h-3 w-3" />
+                </a>
                 <span className="text-xs text-muted-foreground">{ds.split}</span>
-                {ds.size && <span className="text-xs text-muted-foreground ml-auto">{ds.size}</span>}
+                {ds.size && (
+                  <span className="text-xs text-muted-foreground ml-auto">{ds.size}</span>
+                )}
               </div>
             ))}
           </CardContent>

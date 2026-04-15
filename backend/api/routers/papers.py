@@ -24,6 +24,8 @@ from api.paper_extraction.pipeline import extract_paper
 from api.paper_extraction.pdf_reader import extract_text_from_pdf
 from api.code_generation.pipeline import generate_code
 from api.reproducibility.pipeline import analyze_reproducibility
+from api.flowchart.pipeline import generate_flowchart
+from api.chat.faq import generate_faq
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +46,7 @@ class PaperRecord(BaseModel):
     extraction: Optional[dict] = None
     code_scaffold: Optional[dict] = None
     reproducibility: Optional[list] = None
+    flowchart: Optional[dict] = None
     error_message: Optional[str] = None
 
 
@@ -66,6 +69,7 @@ def _db_row_to_record(row: dict) -> PaperRecord:
         extraction=row.get("extraction_json"),
         code_scaffold=row.get("code_scaffold_json"),
         reproducibility=row.get("reproducibility_json"),
+        flowchart=row.get("flowchart_json"),
         error_message=row.get("error_message"),
     )
 
@@ -82,10 +86,21 @@ async def _run_pipeline(paper_id: str, pdf_bytes: bytes) -> None:
     """
     logger.info("Pipeline starting for paper %s", paper_id)
     try:
+        # Step 1: Extract paper metadata
         extraction = await extract_paper(pdf_bytes)
+
+        # Step 2: Generate code scaffold
         code_scaffold = await generate_code(extraction)
+
+        # Step 3: Reproducibility analysis
         paper_text = extract_text_from_pdf(pdf_bytes)
         reproducibility = await analyze_reproducibility(extraction, paper_text)
+
+        # Step 4: Flowchart + code annotations (Learn tab)
+        flowchart = await generate_flowchart(extraction, code_scaffold)
+
+        # Step 5: Pre-generate FAQ (served instantly in chat tab)
+        faq = await generate_faq(extraction, code_scaffold)
 
         await papers_db.update_paper(
             paper_id=paper_id,
@@ -95,6 +110,8 @@ async def _run_pipeline(paper_id: str, pdf_bytes: bytes) -> None:
             extraction_json=extraction,
             code_scaffold_json=code_scaffold,
             reproducibility_json=reproducibility,
+            flowchart_json=flowchart,
+            faq_json=faq,
         )
         logger.info("Pipeline complete for paper %s", paper_id)
 
@@ -180,6 +197,37 @@ async def get_paper(paper_id: str) -> PaperRecord:
     if not row:
         raise HTTPException(status_code=404, detail=f"Paper {paper_id} not found")
     return _db_row_to_record(row)
+
+
+@router.get("/{paper_id}/pdf-url", summary="Get a signed URL to view the uploaded PDF")
+async def get_pdf_url(paper_id: str) -> dict:
+    """
+    Returns a URL to view the original uploaded PDF.
+    Tries Supabase Storage first, then falls back to arXiv if the paper has an arxiv_id.
+    """
+    if storage.is_configured():
+        sb = storage._client()
+        if sb:
+            try:
+                resp = (
+                    sb.table("user_uploads")
+                    .select("bucket_path")
+                    .eq("upload_id", f"{paper_id}_pdf")
+                    .single()
+                    .execute()
+                )
+                if resp.data:
+                    url = storage.get_presigned_url(resp.data["bucket_path"])
+                    if url:
+                        return {"url": url, "source": "storage"}
+            except Exception as exc:
+                logger.debug("PDF signed URL lookup failed: %s", exc)
+
+    row = await papers_db.get_paper(paper_id)
+    if row and row.get("arxiv_id"):
+        return {"url": f"https://arxiv.org/pdf/{row['arxiv_id']}", "source": "arxiv"}
+
+    raise HTTPException(status_code=404, detail="PDF not available for this paper")
 
 
 @router.get("/{paper_id}/download", summary="Download code scaffold as .zip")

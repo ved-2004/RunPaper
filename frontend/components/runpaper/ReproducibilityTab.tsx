@@ -23,6 +23,18 @@ export function ReproducibilityTab({ items }: { items: ReproducibilityItem[] }) 
 
   return (
     <div className="space-y-4">
+      {/* Legend */}
+      <div className="flex flex-wrap items-center gap-5 px-1 py-2 text-xs text-muted-foreground">
+        <div className="flex items-center gap-1.5">
+          <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
+          <span>Explicitly specified in the paper</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <XCircle className="h-4 w-4 text-destructive shrink-0" />
+          <span>Not specified — suggested default shown where available</span>
+        </div>
+      </div>
+
       {/* Summary */}
       <Card>
         <CardContent className="p-5">

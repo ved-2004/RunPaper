@@ -2,6 +2,7 @@ export interface Hyperparameter {
   name: string;
   value: string;
   source: string;
+  description?: string;
 }
 
 export interface Dataset {
@@ -44,6 +45,45 @@ export interface ReproducibilityItem {
   suggested_default: string | null;
 }
 
+// ── Flowchart / Learn tab ─────────────────────────────────────────────────────
+
+export interface FlowchartNode {
+  id: string;
+  label: string;
+  type: "input" | "process" | "output" | "data";
+  description: string;
+  math: string | null;
+  details: string;
+  code_ref: string;
+  code_file: "model.py" | "train.py";
+  layer: number;
+}
+
+export interface FlowchartEdge {
+  id: string;
+  source: string;
+  target: string;
+  label?: string;
+}
+
+export interface CodeAnnotation {
+  name: string;
+  signature: string;
+  explanation: string;
+  component_id: string | null;
+}
+
+export interface FileAnnotations {
+  overview: string;
+  functions: CodeAnnotation[];
+}
+
+export interface FlowchartData {
+  nodes: FlowchartNode[];
+  edges: FlowchartEdge[];
+  annotations: Record<string, FileAnnotations>;
+}
+
 export interface PaperRecord {
   paper_id: string;
   arxiv_id: string | null;
@@ -54,6 +94,7 @@ export interface PaperRecord {
   extraction: PaperExtraction | null;
   code_scaffold: CodeScaffold | null;
   reproducibility: ReproducibilityItem[] | null;
+  flowchart: FlowchartData | null;
   error_message: string | null;
 }
 

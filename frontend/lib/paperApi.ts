@@ -34,3 +34,9 @@ export async function downloadZip(paperId: string): Promise<Blob> {
   if (!res.ok) throw new Error("Download failed");
   return res.blob();
 }
+
+export async function getPdfUrl(paperId: string): Promise<{ url: string; source: string }> {
+  const res = await fetch(`${API_BASE_URL}/api/papers/${paperId}/pdf-url`);
+  if (!res.ok) throw new Error("PDF not available");
+  return res.json();
+}

@@ -78,6 +78,10 @@ app.include_router(rag_router.router)
 from api.routers import papers as papers_router
 app.include_router(papers_router.router)
 
+# Chat — live Q&A + pre-generated FAQ over paper context
+from api.routers import chat as chat_router
+app.include_router(chat_router.router)
+
 _CORS_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:5173",

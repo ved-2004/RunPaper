@@ -86,7 +86,9 @@ async def update_paper(
     extraction_json: Optional[dict] = None,
     code_scaffold_json: Optional[dict] = None,
     reproducibility_json: Optional[list] = None,
+    flowchart_json: Optional[dict] = None,
     error_message: Optional[str] = None,
+    **kwargs: Any,
 ) -> bool:
     """Update paper status and results."""
     updates: dict[str, Any] = {"status": status}
@@ -100,6 +102,12 @@ async def update_paper(
         updates["code_scaffold_json"] = json.loads(json.dumps(code_scaffold_json, default=str))
     if reproducibility_json is not None:
         updates["reproducibility_json"] = json.loads(json.dumps(reproducibility_json, default=str))
+    if flowchart_json is not None:
+        updates["flowchart_json"] = json.loads(json.dumps(flowchart_json, default=str))
+    if "faq_json" in kwargs:
+        faq = kwargs["faq_json"]
+        if faq is not None:
+            updates["faq_json"] = json.loads(json.dumps(faq, default=str))
     if error_message is not None:
         updates["error_message"] = error_message
 
