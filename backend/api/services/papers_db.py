@@ -150,20 +150,41 @@ async def get_paper(paper_id: str) -> Optional[dict]:
 
 
 async def list_user_papers(user_id: Optional[str] = None) -> list[dict]:
-    """List papers. If user_id is None, returns all papers (most recent first)."""
+    """List non-deleted papers. If user_id is None, returns all (most recent first)."""
     sb = _client()
     if sb is None:
         papers = list(_fallback_store.values())
         if user_id is not None:
             papers = [p for p in papers if p.get("user_id") == user_id]
+        # Filter out soft-deleted
+        papers = [p for p in papers if not p.get("deleted_at")]
         return sorted(papers, key=lambda p: p.get("uploaded_at", ""), reverse=True)
 
     try:
         query = sb.table(_TABLE).select("paper_id, title, authors_json, uploaded_at, status")
         if user_id is not None:
             query = query.eq("user_id", user_id)
-        resp = query.order("uploaded_at", desc=True).execute()
+        resp = query.is_("deleted_at", "null").order("uploaded_at", desc=True).execute()
         return resp.data or []
     except Exception as exc:
         logger.error("list_user_papers failed: %s", exc)
         return []
+
+
+async def soft_delete_paper(paper_id: str) -> bool:
+    """Mark a paper as deleted. Returns True on success."""
+    now = _now_iso()
+    sb = _client()
+    if sb is None:
+        if paper_id in _fallback_store:
+            _fallback_store[paper_id]["deleted_at"] = now
+            return True
+        return False
+
+    try:
+        sb.table(_TABLE).update({"deleted_at": now}).eq("paper_id", paper_id).execute()
+        logger.info("Paper %s soft-deleted", paper_id)
+        return True
+    except Exception as exc:
+        logger.error("soft_delete_paper failed for %s: %s", paper_id, exc)
+        return False

@@ -1,8 +1,10 @@
 "use client";
 
-import { BarChart3, Settings, Upload, FileText, Cpu, LogIn } from "lucide-react";
+import { BarChart3, Settings, Upload, FileText, Cpu, LogIn, LogOut } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { usePathname } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
   SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem,
@@ -53,6 +55,13 @@ interface AppSidebarProps {
 export function AppSidebar({ isTrial = false }: AppSidebarProps) {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
+  const { user, logout } = useAuth();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    await logout();
+    router.replace("/login");
+  };
 
   return (
     <Sidebar collapsible="icon">
@@ -115,7 +124,8 @@ export function AppSidebar({ isTrial = false }: AppSidebarProps) {
       </SidebarContent>
 
       <SidebarFooter className="p-3">
-        {isTrial && (
+        {isTrial ? (
+          /* Trial — Sign in CTA */
           <Link
             href="/login"
             className={cn(
@@ -127,7 +137,33 @@ export function AppSidebar({ isTrial = false }: AppSidebarProps) {
             <LogIn className="h-4 w-4 shrink-0" />
             {!collapsed && <span>Sign in for more</span>}
           </Link>
-        )}
+        ) : user ? (
+          /* Signed-in — user chip + logout */
+          <div className={cn(
+            "flex items-center gap-2 rounded-lg px-2 py-2",
+            collapsed && "justify-center px-0",
+          )}>
+            {/* Avatar */}
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground uppercase select-none">
+              {user.name?.[0] ?? user.email?.[0] ?? "?"}
+            </div>
+            {!collapsed && (
+              <>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium truncate leading-tight">{user.name}</p>
+                  <p className="text-[10px] text-muted-foreground truncate leading-tight">{user.email}</p>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  title="Sign out"
+                  className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-sidebar-accent transition-colors"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                </button>
+              </>
+            )}
+          </div>
+        ) : null}
       </SidebarFooter>
     </Sidebar>
   );

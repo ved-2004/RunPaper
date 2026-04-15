@@ -244,6 +244,23 @@ async def get_pdf_url(paper_id: str) -> dict:
     raise HTTPException(status_code=404, detail="PDF not available for this paper")
 
 
+@router.delete("/{paper_id}", summary="Soft-delete a paper")
+async def delete_paper(paper_id: str) -> dict:
+    """
+    Soft-deletes a paper by setting deleted_at. The row is never removed from the DB.
+    Returns 404 if paper doesn't exist, 204-equivalent dict on success.
+    """
+    row = await papers_db.get_paper(paper_id)
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Paper {paper_id} not found")
+
+    ok = await papers_db.soft_delete_paper(paper_id)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Failed to delete paper")
+
+    return {"deleted": True, "paper_id": paper_id}
+
+
 @router.get("/{paper_id}/download", summary="Download code scaffold as .zip")
 async def download_zip(paper_id: str) -> StreamingResponse:
     """Return a .zip archive containing model.py, train.py, config.yaml, requirements.txt."""

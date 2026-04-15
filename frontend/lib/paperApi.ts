@@ -61,3 +61,8 @@ export async function getPdfUrl(paperId: string): Promise<{ url: string; source:
   if (!res.ok) throw new Error("PDF not available");
   return res.json();
 }
+
+export async function deletePaper(paperId: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/api/papers/${paperId}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete paper");
+}
