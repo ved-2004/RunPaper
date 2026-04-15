@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, Settings, Upload, FileText, Cpu } from "lucide-react";
+import { BarChart3, Settings, Upload, FileText, Cpu, LogIn } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -45,7 +45,12 @@ function NavItem({ url, title, icon: Icon }: { url: string; title: string; icon:
   );
 }
 
-export function AppSidebar() {
+interface AppSidebarProps {
+  /** True when the user is not signed in (trial / anonymous mode). */
+  isTrial?: boolean;
+}
+
+export function AppSidebar({ isTrial = false }: AppSidebarProps) {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
 
@@ -66,35 +71,64 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>Workspace</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {mainNav.map((item) => <NavItem key={item.url} {...item} />)}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {isTrial ? (
+          /* Trial mode — only show Upload */
+          <SidebarGroup>
+            <SidebarGroupLabel>Try it free</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <NavItem url="/upload" title="Upload Paper" icon={Upload} />
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ) : (
+          /* Signed-in — full nav */
+          <>
+            <SidebarGroup>
+              <SidebarGroupLabel>Workspace</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {mainNav.map((item) => <NavItem key={item.url} {...item} />)}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
 
-        <SidebarGroup>
-          <SidebarGroupLabel>Papers</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {workflowNav.map((item) => <NavItem key={item.url} {...item} />)}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+            <SidebarGroup>
+              <SidebarGroupLabel>Papers</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {workflowNav.map((item) => <NavItem key={item.url} {...item} />)}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
 
-        <SidebarGroup>
-          <SidebarGroupLabel>System</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {systemNav.map((item) => <NavItem key={item.url} {...item} />)}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+            <SidebarGroup>
+              <SidebarGroupLabel>System</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {systemNav.map((item) => <NavItem key={item.url} {...item} />)}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </>
+        )}
       </SidebarContent>
 
-      <SidebarFooter className="p-3" />
+      <SidebarFooter className="p-3">
+        {isTrial && (
+          <Link
+            href="/login"
+            className={cn(
+              "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium",
+              "bg-primary/10 text-primary hover:bg-primary/20 transition-colors",
+              collapsed && "justify-center px-0",
+            )}
+          >
+            <LogIn className="h-4 w-4 shrink-0" />
+            {!collapsed && <span>Sign in for more</span>}
+          </Link>
+        )}
+      </SidebarFooter>
     </Sidebar>
   );
 }

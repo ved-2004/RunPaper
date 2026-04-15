@@ -2,9 +2,11 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Cpu } from "lucide-react";
+import Link from "next/link";
+import { Cpu, ArrowRight } from "lucide-react";
 import { GoogleSignInButton } from "@/components/auth/GoogleSignInButton";
 import { useAuth } from "@/contexts/AuthContext";
+import { Button } from "@/components/ui/button";
 
 export default function LoginPage() {
   const { user, isLoading } = useAuth();
@@ -32,7 +34,7 @@ export default function LoginPage() {
           </div>
         </div>
 
-        {/* Card */}
+        {/* Sign in card */}
         <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
           <p className="text-sm text-center text-muted-foreground mb-5">
             Sign in to upload papers and generate code scaffolds
@@ -40,6 +42,22 @@ export default function LoginPage() {
           <div className="flex justify-center">
             <GoogleSignInButton />
           </div>
+        </div>
+
+        {/* Trial CTA */}
+        <div className="mt-4 rounded-xl border border-dashed border-border bg-card/50 px-5 py-4 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium">Try it first</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              One free paper — no account needed
+            </p>
+          </div>
+          <Button asChild size="sm" variant="outline" className="shrink-0 gap-1.5">
+            <Link href="/upload">
+              Upload a paper
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </Button>
         </div>
 
         <p className="text-center text-xs text-muted-foreground mt-6">

@@ -14,11 +14,13 @@ import zipfile
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, BackgroundTasks, File, Header, HTTPException, UploadFile
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
+from typing import Optional as Opt
 
 from api.services import papers_db
+from api.services import trial_db
 import api.services.storage as storage
 from api.paper_extraction.pipeline import extract_paper
 from api.paper_extraction.pdf_reader import extract_text_from_pdf
@@ -130,6 +132,7 @@ async def _run_pipeline(paper_id: str, pdf_bytes: bytes) -> None:
 async def upload_and_analyze(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    x_trial_id: Opt[str] = Header(None, alias="X-Trial-ID"),
 ) -> dict:
     """
     Upload a research paper PDF. Returns a paper_id immediately.
@@ -146,6 +149,17 @@ async def upload_and_analyze(
         raise HTTPException(status_code=400, detail="File exceeds 50 MB limit")
     if len(content) == 0:
         raise HTTPException(status_code=400, detail="File is empty")
+
+    # ── Trial gate ────────────────────────────────────────────────────────────
+    # Signed-in users (future: pass JWT user_id) bypass this entirely.
+    # Anonymous users must supply X-Trial-ID and have uploads remaining.
+    if x_trial_id:
+        allowed = await trial_db.check_and_consume(x_trial_id)
+        if not allowed:
+            return JSONResponse(
+                status_code=403,
+                content={"code": "trial_exhausted", "message": "Free trial used. Sign in to continue."},
+            )
 
     paper_id = papers_db.generate_paper_id()
 

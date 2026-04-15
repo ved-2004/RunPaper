@@ -90,7 +90,7 @@ export default function PaperPage() {
     setCompanion((c) => (c === val ? "none" : val));
 
   return (
-    <AppLayout>
+    <AppLayout requiresAuth={false}>
       <div className="p-6 max-w-[1400px] mx-auto">
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
