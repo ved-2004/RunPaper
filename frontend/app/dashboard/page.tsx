@@ -7,10 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { listPapers, deletePaper } from "@/lib/paperApi";
-import { ArrowRight, FileText, Loader2, Upload, Trash2, AlertTriangle } from "lucide-react";
+import { ArrowRight, FileText, Upload, Trash2, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import type { PaperSummary } from "@/types/paper";
 import { cn } from "@/lib/utils";
+import { PaperListSkeleton } from "@/components/runpaper/PaperCardSkeleton";
 
 function statusBadge(status: PaperSummary["status"]) {
   if (status === "complete") return <Badge className="bg-green-500/10 text-green-600 border-green-500/20 dark:text-green-400">Complete</Badge>;
@@ -119,9 +120,7 @@ export default function DashboardPage() {
         </div>
 
         {isLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-6 w-6 animate-spin text-primary" />
-          </div>
+          <PaperListSkeleton />
         ) : papers.length === 0 ? (
           <Card className="border-dashed">
             <CardContent className="py-16 text-center">

@@ -17,6 +17,7 @@ import { CodeTab } from "@/components/runpaper/CodeTab";
 import { ReproducibilityTab } from "@/components/runpaper/ReproducibilityTab";
 import { FlowchartTab } from "@/components/runpaper/FlowchartTab";
 import { ChatTab } from "@/components/runpaper/ChatTab";
+import { PaperPageSkeleton } from "@/components/runpaper/PaperPageSkeleton";
 import { cn } from "@/lib/utils";
 
 // ── PDF Viewer ────────────────────────────────────────────────────────────────
@@ -105,14 +106,18 @@ export default function PaperPage() {
   const toggleCompanion = (val: Companion) =>
     setCompanion((c) => (c === val ? "none" : val));
 
+  if (isLoading) {
+    return (
+      <AppLayout requiresAuth={false}>
+        <PaperPageSkeleton />
+      </AppLayout>
+    );
+  }
+
   return (
     <AppLayout requiresAuth={false}>
       <div className="p-6 max-w-[1400px] mx-auto">
-        {isLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-6 w-6 animate-spin text-primary" />
-          </div>
-        ) : error ? (
+        {error ? (
           <Card>
             <CardContent className="py-16 text-center">
               <AlertCircle className="h-10 w-10 mx-auto text-destructive mb-4" />
@@ -282,7 +287,15 @@ export default function PaperPage() {
                     flowchart={paper.flowchart}
                   />
                 ) : (
-                  <p className="text-sm text-muted-foreground">No code scaffold generated.</p>
+                  <Card>
+                    <CardContent className="py-12 text-center">
+                      <Code2 className="h-8 w-8 mx-auto text-muted-foreground/40 mb-3" />
+                      <p className="text-sm font-medium">No code scaffold generated</p>
+                      <p className="text-xs text-muted-foreground mt-1 max-w-xs mx-auto">
+                        The pipeline could not generate code for this paper. The extraction may still be available in the Extraction tab.
+                      </p>
+                    </CardContent>
+                  </Card>
                 )}
               </TabsContent>
 
@@ -296,7 +309,15 @@ export default function PaperPage() {
                 {paper.extraction ? (
                   <ExtractionTab extraction={paper.extraction} />
                 ) : (
-                  <p className="text-sm text-muted-foreground">No extraction data.</p>
+                  <Card>
+                    <CardContent className="py-12 text-center">
+                      <FileText className="h-8 w-8 mx-auto text-muted-foreground/40 mb-3" />
+                      <p className="text-sm font-medium">No extraction data</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Paper metadata could not be extracted.
+                      </p>
+                    </CardContent>
+                  </Card>
                 )}
               </TabsContent>
 
@@ -305,7 +326,15 @@ export default function PaperPage() {
                 {paper.reproducibility ? (
                   <ReproducibilityTab items={paper.reproducibility} />
                 ) : (
-                  <p className="text-sm text-muted-foreground">No reproducibility data.</p>
+                  <Card>
+                    <CardContent className="py-12 text-center">
+                      <GitCompare className="h-8 w-8 mx-auto text-muted-foreground/40 mb-3" />
+                      <p className="text-sm font-medium">No reproducibility checklist</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Could not analyze reproducibility for this paper.
+                      </p>
+                    </CardContent>
+                  </Card>
                 )}
               </TabsContent>
 
