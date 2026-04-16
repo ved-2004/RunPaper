@@ -110,7 +110,7 @@ export default function DashboardPage() {
       <div className="p-6 max-w-5xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+            <h1 className="text-2xl font-bold tracking-tight">My Papers</h1>
             <p className="text-sm text-muted-foreground mt-0.5">Your paper implementations</p>
           </div>
           <Button asChild>
