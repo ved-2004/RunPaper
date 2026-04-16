@@ -12,6 +12,16 @@ export class TrialExhaustedError extends Error {
   }
 }
 
+/** Thrown when the server rate-limits the request (HTTP 429). */
+export class RateLimitError extends Error {
+  retryAfter: number;
+  constructor(retryAfter = 60) {
+    super("rate_limited");
+    this.name = "RateLimitError";
+    this.retryAfter = retryAfter;
+  }
+}
+
 // ── API calls ─────────────────────────────────────────────────────────────────
 
 export async function uploadAndAnalyze(file: File): Promise<{ paper_id: string }> {
@@ -29,6 +39,11 @@ export async function uploadAndAnalyze(file: File): Promise<{ paper_id: string }
   if (res.status === 403) {
     const body = await res.json().catch(() => ({}));
     if (body?.code === "trial_exhausted") throw new TrialExhaustedError();
+  }
+
+  if (res.status === 429) {
+    const retryAfter = parseInt(res.headers.get("Retry-After") ?? "60", 10);
+    throw new RateLimitError(retryAfter);
   }
 
   if (!res.ok) {
