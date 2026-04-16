@@ -135,9 +135,14 @@ export default function PaperPage() {
             <CardContent className="py-16 text-center">
               <AlertCircle className="h-10 w-10 mx-auto text-destructive mb-4" />
               <h3 className="text-sm font-medium">Analysis failed</h3>
-              <p className="text-xs text-muted-foreground mt-1">
-                {paper.error_message || "An error occurred during analysis."}
+              <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
+                {paper.error_message?.includes("timed out")
+                  ? "The pipeline took too long and was stopped. This can happen with very large or complex PDFs. Please try uploading again."
+                  : (paper.error_message || "An error occurred during analysis.")}
               </p>
+              <Button asChild size="sm" variant="outline" className="mt-4">
+                <a href="/upload">Try again</a>
+              </Button>
             </CardContent>
           </Card>
         ) : paper ? (
