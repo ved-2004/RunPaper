@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, Settings, Upload, FileText, Cpu, LogIn, LogOut } from "lucide-react";
+import { Settings, Upload, FileText, Cpu, LogIn, LogOut } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { usePathname } from "next/navigation";
@@ -12,11 +12,7 @@ import {
 } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 
-const mainNav = [
-  { title: "Dashboard", url: "/dashboard", icon: BarChart3 },
-];
-
-const workflowNav = [
+const papersNav = [
   { title: "Upload Paper", url: "/upload", icon: Upload },
   { title: "My Papers", url: "/dashboard", icon: FileText },
 ];
@@ -94,19 +90,10 @@ export function AppSidebar({ isTrial = false }: AppSidebarProps) {
           /* Signed-in — full nav */
           <>
             <SidebarGroup>
-              <SidebarGroupLabel>Workspace</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {mainNav.map((item) => <NavItem key={item.url} {...item} />)}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-
-            <SidebarGroup>
               <SidebarGroupLabel>Papers</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {workflowNav.map((item) => <NavItem key={item.url} {...item} />)}
+                  {papersNav.map((item) => <NavItem key={item.url} {...item} />)}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>

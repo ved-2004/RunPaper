@@ -12,9 +12,8 @@ import {
 import { usePathname } from "next/navigation";
 
 const routeNames: Record<string, string> = {
-  "/dashboard": "Dashboard",
+  "/dashboard": "My Papers",
   "/upload": "Upload Paper",
-  "/papers": "My Papers",
   "/settings": "Settings",
 };
 
