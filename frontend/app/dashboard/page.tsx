@@ -36,9 +36,9 @@ function PaperCard({ paper }: { paper: PaperSummary }) {
       <CardContent className="p-4">
         {confirming ? (
           /* ── Confirm strip ── */
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-sm text-destructive">
-              <AlertTriangle className="h-4 w-4 shrink-0" />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3">
+            <div className="flex items-start sm:items-center gap-2 text-sm text-destructive">
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 sm:mt-0" />
               <span>Delete <span className="font-medium">{paper.title || "this paper"}</span>? This can't be undone.</span>
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -107,14 +107,14 @@ export default function DashboardPage() {
 
   return (
     <AppLayout>
-      <div className="p-6 max-w-5xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
+      <div className="p-3 sm:p-6 max-w-5xl mx-auto">
+        <div className="flex items-center justify-between mb-5 sm:mb-6">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">Your paper implementations</p>
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight">My Papers</h1>
+            <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">Your paper implementations</p>
           </div>
-          <Button asChild>
-            <Link href="/upload"><Upload className="mr-2 h-4 w-4" />Upload Paper</Link>
+          <Button asChild size="sm">
+            <Link href="/upload"><Upload className="mr-1.5 h-3.5 w-3.5" /><span className="hidden sm:inline">Upload Paper</span><span className="sm:hidden">Upload</span></Link>
           </Button>
         </div>
 

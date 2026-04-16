@@ -108,10 +108,10 @@ export default function UploadPage() {
     <AppLayout requiresAuth={false}>
       {trialExhausted && <TrialExhaustedModal onClose={() => setTrialExhausted(false)} />}
 
-      <div className="p-6 max-w-2xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold tracking-tight">Upload Paper</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
+      <div className="p-3 sm:p-6 max-w-2xl mx-auto">
+        <div className="mb-5 sm:mb-6">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Upload Paper</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
             Upload a research paper PDF to generate a runnable Python scaffold.
           </p>
         </div>
