@@ -7,8 +7,9 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { uploadAndAnalyze, importFromArxiv, TrialExhaustedError, RateLimitError } from "@/lib/paperApi";
-import { Upload, FileText, Loader2, AlertCircle, Cpu, Sparkles, Link2 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { uploadAndAnalyze, importFromArxiv, TrialExhaustedError, RateLimitError, PaperLimitError } from "@/lib/paperApi";
+import { Upload, FileText, Loader2, AlertCircle, Cpu, Sparkles, Link2, Mail } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ── Trial exhausted modal ─────────────────────────────────────────────────────
@@ -17,22 +18,15 @@ function TrialExhaustedModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
-        {/* Icon */}
         <div className="flex justify-center mb-4">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary shadow">
             <Cpu className="h-6 w-6 text-primary-foreground" />
           </div>
         </div>
-
-        {/* Copy */}
-        <h2 className="text-lg font-bold text-center tracking-tight">
-          You've used your free trial
-        </h2>
+        <h2 className="text-lg font-bold text-center tracking-tight">You've used your free trial</h2>
         <p className="text-sm text-muted-foreground text-center mt-2 leading-relaxed">
           Sign in to unlock unlimited papers, save your results permanently, and access your full paper history.
         </p>
-
-        {/* Benefits */}
         <ul className="mt-4 space-y-1.5 text-sm">
           {[
             "Unlimited paper uploads",
@@ -46,8 +40,6 @@ function TrialExhaustedModal({ onClose }: { onClose: () => void }) {
             </li>
           ))}
         </ul>
-
-        {/* Actions */}
         <div className="mt-6 flex flex-col gap-2">
           <Button asChild className="w-full">
             <Link href="/login">Sign in with Google — it's free</Link>
@@ -56,6 +48,79 @@ function TrialExhaustedModal({ onClose }: { onClose: () => void }) {
             Maybe later
           </Button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Paper limit modal ─────────────────────────────────────────────────────────
+
+const FEEDBACK_QUESTIONS = [
+  "What are you trying to build or reproduce with RunPaper?",
+  "What would make you want more than 5 papers?",
+  "Any features that would make RunPaper more useful for you?",
+];
+
+function PaperLimitModal({ limit, onClose }: { limit: number; onClose: () => void }) {
+  const [answers, setAnswers] = useState<string[]>(["", "", ""]);
+
+  const mailtoBody = FEEDBACK_QUESTIONS.map(
+    (q, i) => `${q}\n${answers[i] || "(no answer)"}`
+  ).join("\n\n");
+
+  const mailtoLink =
+    `mailto:runpaper@ved.cx` +
+    `?subject=${encodeURIComponent("RunPaper — I'd like more papers")}` +
+    `&body=${encodeURIComponent(mailtoBody + "\n\n---\nSent from RunPaper feedback form")}`;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-center mb-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-500/10 border border-amber-500/20">
+            <Sparkles className="h-6 w-6 text-amber-500" />
+          </div>
+        </div>
+
+        <h2 className="text-lg font-bold text-center tracking-tight">You've hit your {limit}-paper limit</h2>
+        <p className="text-sm text-muted-foreground text-center mt-2 leading-relaxed">
+          We're keeping things small while we grow. Answer a few quick questions and we'll increase your limit — usually within 24 hours.
+        </p>
+
+        <div className="mt-5 space-y-4">
+          {FEEDBACK_QUESTIONS.map((question, i) => (
+            <div key={i} className="space-y-1.5">
+              <label className="text-xs font-medium text-foreground">{question}</label>
+              <Textarea
+                rows={2}
+                placeholder="Your answer…"
+                value={answers[i]}
+                onChange={(e) => {
+                  const updated = [...answers];
+                  updated[i] = e.target.value;
+                  setAnswers(updated);
+                }}
+                className="text-sm resize-none"
+              />
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-5 flex flex-col gap-2">
+          <Button asChild className="w-full gap-2">
+            <a href={mailtoLink}>
+              <Mail className="h-4 w-4" />
+              Send feedback & request more papers
+            </a>
+          </Button>
+          <Button variant="ghost" className="w-full text-muted-foreground" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+
+        <p className="text-xs text-muted-foreground text-center mt-3">
+          Opens your email client with the answers pre-filled.
+        </p>
       </div>
     </div>
   );
@@ -81,8 +146,9 @@ export default function UploadPage() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [trialExhausted, setTrialExhausted] = useState(false);
+  const [paperLimit, setPaperLimit] = useState<number | null>(null);
 
-  // ── PDF handlers ────────────────────────────────────────────────────────────
+  // ── PDF handlers ─────────────────────────────────────────────────────────────
 
   const handleFile = (file: File) => {
     if (!file.name.endsWith(".pdf")) {
@@ -110,6 +176,8 @@ export default function UploadPage() {
     } catch (err: unknown) {
       if (err instanceof TrialExhaustedError) {
         setTrialExhausted(true);
+      } else if (err instanceof PaperLimitError) {
+        setPaperLimit(err.limit);
       } else if (err instanceof RateLimitError) {
         const mins = Math.ceil(err.retryAfter / 60);
         setError(`Too many uploads. Please wait ${mins} minute${mins !== 1 ? "s" : ""} and try again.`);
@@ -120,7 +188,7 @@ export default function UploadPage() {
     }
   };
 
-  // ── arXiv handlers ──────────────────────────────────────────────────────────
+  // ── arXiv handlers ────────────────────────────────────────────────────────────
 
   const handleArxivSubmit = async () => {
     const trimmed = arxivInput.trim();
@@ -133,6 +201,8 @@ export default function UploadPage() {
     } catch (err: unknown) {
       if (err instanceof TrialExhaustedError) {
         setTrialExhausted(true);
+      } else if (err instanceof PaperLimitError) {
+        setPaperLimit(err.limit);
       } else if (err instanceof RateLimitError) {
         const mins = Math.ceil(err.retryAfter / 60);
         setError(`Too many requests. Please wait ${mins} minute${mins !== 1 ? "s" : ""} and try again.`);
@@ -142,8 +212,6 @@ export default function UploadPage() {
       setUploading(false);
     }
   };
-
-  // ── Switch mode ─────────────────────────────────────────────────────────────
 
   const switchMode = (m: InputMode) => {
     setMode(m);
@@ -157,6 +225,9 @@ export default function UploadPage() {
   return (
     <AppLayout requiresAuth={false}>
       {trialExhausted && <TrialExhaustedModal onClose={() => setTrialExhausted(false)} />}
+      {paperLimit !== null && (
+        <PaperLimitModal limit={paperLimit} onClose={() => setPaperLimit(null)} />
+      )}
 
       <div className="p-3 sm:p-6 max-w-2xl mx-auto">
         <div className="mb-5 sm:mb-6">

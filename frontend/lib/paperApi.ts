@@ -22,6 +22,21 @@ export class RateLimitError extends Error {
   }
 }
 
+/** Thrown when a signed-in user has reached their paper limit. */
+export class PaperLimitError extends Error {
+  limit: number;
+  constructor(limit = 5) {
+    super("paper_limit_reached");
+    this.name = "PaperLimitError";
+    this.limit = limit;
+  }
+}
+
+function _authHeaders(): Record<string, string> {
+  const token = typeof window !== "undefined" ? localStorage.getItem("runpaper_token") : null;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 // ── API calls ─────────────────────────────────────────────────────────────────
 
 export async function uploadAndAnalyze(file: File): Promise<{ paper_id: string }> {
@@ -32,13 +47,14 @@ export async function uploadAndAnalyze(file: File): Promise<{ paper_id: string }
 
   const res = await fetch(`${API_BASE_URL}/api/papers/upload-and-analyze`, {
     method: "POST",
-    headers: { "X-Trial-ID": trialId },
+    headers: { "X-Trial-ID": trialId, ..._authHeaders() },
     body: form,
   });
 
   if (res.status === 403) {
     const body = await res.json().catch(() => ({}));
     if (body?.code === "trial_exhausted") throw new TrialExhaustedError();
+    if (body?.code === "paper_limit_reached") throw new PaperLimitError(body.limit ?? 5);
   }
 
   if (res.status === 429) {
@@ -63,6 +79,7 @@ export async function importFromArxiv(
     headers: {
       "Content-Type": "application/json",
       "X-Trial-ID": trialId,
+      ..._authHeaders(),
     },
     body: JSON.stringify({ arxiv_url: arxivUrl }),
   });
@@ -70,6 +87,7 @@ export async function importFromArxiv(
   if (res.status === 403) {
     const body = await res.json().catch(() => ({}));
     if (body?.code === "trial_exhausted") throw new TrialExhaustedError();
+    if (body?.code === "paper_limit_reached") throw new PaperLimitError(body.limit ?? 5);
   }
 
   if (!res.ok) {
@@ -86,7 +104,7 @@ export async function getPaper(paperId: string): Promise<PaperRecord> {
 }
 
 export async function listPapers(): Promise<PaperSummary[]> {
-  const res = await fetch(`${API_BASE_URL}/api/papers`);
+  const res = await fetch(`${API_BASE_URL}/api/papers`, { headers: _authHeaders() });
   if (!res.ok) throw new Error("Failed to fetch papers");
   return res.json();
 }

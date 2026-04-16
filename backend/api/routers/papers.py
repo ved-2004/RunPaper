@@ -3,9 +3,23 @@ routers/papers.py
 
 POST /api/papers/upload-and-analyze  — upload PDF, start full pipeline (background)
 POST /api/papers/arxiv-import        — import from arXiv ID or URL, start pipeline
-GET  /api/papers                     — list all papers
+GET  /api/papers                     — list papers for the current user
 GET  /api/papers/{paper_id}          — get paper results (poll until complete)
+GET  /api/papers/{paper_id}/pdf-url  — signed URL or arXiv fallback
 GET  /api/papers/{paper_id}/download — download code scaffold as .zip
+DELETE /api/papers/{paper_id}        — soft-delete user's link to the paper
+
+Deduplication:
+  - PDF uploads:   SHA-256 of file bytes → paper_analyses.content_hash
+  - arXiv imports: arxiv_id             → paper_analyses.arxiv_id
+  If an analysis already exists and is 'complete', the pipeline is skipped entirely
+  and the new user_papers row is linked to the existing analysis immediately.
+  If the analysis is 'processing', the new row is still created and the user polls
+  the same underlying analysis. If 'failed', the analysis is reset and re-run.
+
+Paper limit:
+  Signed-in users are limited to max_papers (default 5). Exceeding this returns
+  403 {"code": "paper_limit_reached", "limit": N}.
 """
 from __future__ import annotations
 
@@ -14,13 +28,14 @@ import io
 import logging
 import os
 import re
+import uuid
 import zipfile
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
 
-from fastapi import APIRouter, BackgroundTasks, Body, File, Header, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Header, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from typing import Optional as Opt
@@ -34,6 +49,8 @@ from api.code_generation.pipeline import generate_code
 from api.reproducibility.pipeline import analyze_reproducibility
 from api.flowchart.pipeline import generate_flowchart
 from api.chat.faq import generate_faq
+from api.routers.auth import get_optional_user
+from api.models.user import User
 
 logger = logging.getLogger(__name__)
 
@@ -52,27 +69,20 @@ def _detect_arxiv_id(text: str) -> Optional[str]:
     for pattern in _ARXIV_PATTERNS:
         m = pattern.search(text)
         if m:
-            # Strip version suffix (v1, v2 …) for a stable URL
             return m.group(1).split("v")[0]
     return None
 
 
 # Patterns to parse an arXiv ID from user-supplied input (URL or bare ID)
 _ARXIV_INPUT_PATTERNS = [
-    # Full URL: https://arxiv.org/abs/2301.07041 or /pdf/2301.07041
     re.compile(r'arxiv\.org/(?:abs|pdf)/(\d{4}\.\d{4,5}(?:v\d+)?)', re.IGNORECASE),
-    # arXiv:2301.07041 notation
     re.compile(r'arXiv[:\s]+(\d{4}\.\d{4,5}(?:v\d+)?)', re.IGNORECASE),
-    # Bare ID: 2301.07041 or 2301.07041v2
     re.compile(r'^(\d{4}\.\d{4,5}(?:v\d+)?)$'),
 ]
 
 
 def _parse_arxiv_id_from_input(raw: str) -> Optional[str]:
-    """
-    Accept a user-supplied arXiv URL, 'arXiv:XXXX.XXXXX', or bare ID.
-    Returns the normalized ID (no version suffix) or None.
-    """
+    """Accept a user-supplied arXiv URL, 'arXiv:XXXX.XXXXX', or bare ID."""
     raw = raw.strip()
     for pattern in _ARXIV_INPUT_PATTERNS:
         m = pattern.search(raw)
@@ -82,10 +92,10 @@ def _parse_arxiv_id_from_input(raw: str) -> Optional[str]:
 
 
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
-_ARXIV_PDF_TIMEOUT = 30  # seconds for fetching the PDF from arXiv
+_ARXIV_PDF_TIMEOUT = 30            # seconds
 
 
-# ── Response models ────────────────────────────────────────────────────────────
+# ── Response models ───────────────────────────────────────────────────────────
 
 class PaperRecord(BaseModel):
     paper_id: str
@@ -125,38 +135,27 @@ def _db_row_to_record(row: dict) -> PaperRecord:
     )
 
 
-# ── Background pipeline ────────────────────────────────────────────────────────
+# ── Background pipeline ───────────────────────────────────────────────────────
 
-# How long the full 5-step pipeline is allowed to run before we give up.
-# Override with PIPELINE_TIMEOUT_SECONDS env var.
-_PIPELINE_TIMEOUT: int = int(os.environ.get("PIPELINE_TIMEOUT_SECONDS", "600"))  # 10 min
+_PIPELINE_TIMEOUT: int = int(os.environ.get("PIPELINE_TIMEOUT_SECONDS", "600"))
 
 
-async def _pipeline_work(paper_id: str, pdf_bytes: bytes) -> None:
-    """Inner coroutine — the actual pipeline steps (no timeout logic here)."""
-    # Step 1: Extract paper metadata
+async def _pipeline_work(paper_id: str, analysis_id: str, pdf_bytes: bytes) -> None:
+    """Inner coroutine — runs the 5-step pipeline and writes results to paper_analyses."""
     extraction = await extract_paper(pdf_bytes)
-
-    # Step 2: Generate code scaffold
     code_scaffold = await generate_code(extraction)
-
-    # Step 3: Reproducibility analysis
     paper_text = extract_text_from_pdf(pdf_bytes)
     reproducibility = await analyze_reproducibility(extraction, paper_text)
 
-    # Detect arXiv ID from raw text for PDF fallback
     arxiv_id = _detect_arxiv_id(paper_text)
     if arxiv_id:
         logger.info("Detected arXiv ID: %s", arxiv_id)
 
-    # Step 4: Flowchart + code annotations (Learn tab)
     flowchart = await generate_flowchart(extraction, code_scaffold)
-
-    # Step 5: Pre-generate FAQ (served instantly in chat tab)
     faq = await generate_faq(extraction, code_scaffold)
 
-    await papers_db.update_paper(
-        paper_id=paper_id,
+    await papers_db.update_analysis(
+        analysis_id=analysis_id,
         status="complete",
         title=extraction.get("title"),
         authors_json=extraction.get("authors"),
@@ -167,77 +166,96 @@ async def _pipeline_work(paper_id: str, pdf_bytes: bytes) -> None:
         flowchart_json=flowchart,
         faq_json=faq,
     )
-    logger.info("Pipeline complete for paper %s", paper_id)
+    logger.info("Pipeline complete for paper_id=%s analysis_id=%s", paper_id, analysis_id)
 
 
-async def _run_pipeline(paper_id: str, pdf_bytes: bytes) -> None:
-    """
-    Runs _pipeline_work with a hard timeout.
-    If the pipeline takes longer than PIPELINE_TIMEOUT_SECONDS, the paper
-    is marked as failed so it doesn't stay stuck in 'processing' forever.
-    """
-    logger.info("Pipeline starting for paper %s (timeout=%ds)", paper_id, _PIPELINE_TIMEOUT)
+async def _run_pipeline(paper_id: str, analysis_id: str, pdf_bytes: bytes) -> None:
+    """Wraps _pipeline_work with a hard timeout; marks analysis failed on error."""
+    logger.info(
+        "Pipeline starting paper_id=%s analysis_id=%s (timeout=%ds)",
+        paper_id, analysis_id, _PIPELINE_TIMEOUT,
+    )
     try:
-        await asyncio.wait_for(_pipeline_work(paper_id, pdf_bytes), timeout=_PIPELINE_TIMEOUT)
-
+        await asyncio.wait_for(
+            _pipeline_work(paper_id, analysis_id, pdf_bytes),
+            timeout=_PIPELINE_TIMEOUT,
+        )
     except asyncio.TimeoutError:
         msg = f"Pipeline timed out after {_PIPELINE_TIMEOUT}s"
-        logger.error("Pipeline TIMEOUT for paper %s", paper_id)
-        await papers_db.update_paper(
-            paper_id=paper_id,
-            status="failed",
-            error_message=msg,
+        logger.error("Pipeline TIMEOUT paper_id=%s", paper_id)
+        await papers_db.update_analysis(
+            analysis_id=analysis_id, status="failed", error_message=msg,
         )
-
     except Exception as exc:
-        logger.error("Pipeline failed for paper %s: %s", paper_id, exc, exc_info=True)
-        await papers_db.update_paper(
-            paper_id=paper_id,
-            status="failed",
-            error_message=str(exc),
+        logger.error("Pipeline failed paper_id=%s: %s", paper_id, exc, exc_info=True)
+        await papers_db.update_analysis(
+            analysis_id=analysis_id, status="failed", error_message=str(exc),
         )
 
 
 async def mark_stale_papers_failed(stale_after_minutes: int = 15) -> int:
     """
-    Background job: find papers stuck in 'processing' for longer than
+    Background job: find analyses stuck in 'processing' for longer than
     stale_after_minutes and mark them as failed.
-    Returns the number of papers marked.
     """
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=stale_after_minutes)
     marked = 0
     try:
-        from api.services import papers_db as _pdb
-        import api.services.storage as _storage
         from supabase import create_client
-        import os as _os
-        url = _os.environ.get("SUPABASE_URL", "")
-        key = _os.environ.get("SUPABASE_SERVICE_KEY", "")
+        url = os.environ.get("SUPABASE_URL", "")
+        key = os.environ.get("SUPABASE_SERVICE_KEY", "")
         if not (url and key):
             return 0
         sb = create_client(url, key)
         resp = (
-            sb.table("papers")
-            .select("paper_id, uploaded_at")
+            sb.table("paper_analyses")
+            .select("analysis_id, first_processed_at")
             .eq("status", "processing")
-            .is_("deleted_at", "null")
             .execute()
         )
         for row in (resp.data or []):
-            uploaded = datetime.fromisoformat(
-                row["uploaded_at"].replace("Z", "+00:00")
-            )
-            if uploaded < cutoff:
-                await _pdb.update_paper(
-                    paper_id=row["paper_id"],
+            ts = row.get("first_processed_at", "")
+            processed = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            if processed < cutoff:
+                await papers_db.update_analysis(
+                    analysis_id=row["analysis_id"],
                     status="failed",
                     error_message=f"Processing timed out (stale > {stale_after_minutes} min)",
                 )
-                logger.warning("Marked stale paper %s as failed", row["paper_id"])
+                logger.warning("Marked stale analysis %s as failed", row["analysis_id"])
                 marked += 1
     except Exception as exc:
         logger.error("mark_stale_papers_failed error: %s", exc)
     return marked
+
+
+# ── arXiv PDF fetcher ─────────────────────────────────────────────────────────
+
+async def _fetch_arxiv_pdf(arxiv_id: str) -> bytes:
+    """Fetch the PDF bytes for an arXiv paper. Raises HTTPException on failure."""
+    pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=_ARXIV_PDF_TIMEOUT) as client:
+            resp = await client.get(
+                pdf_url,
+                headers={"User-Agent": "RunPaper/1.0 (research tool; contact@runpaper.app)"},
+            )
+            if resp.status_code != 200:
+                raise HTTPException(
+                    status_code=502,
+                    detail=(
+                        f"arXiv returned HTTP {resp.status_code} for {arxiv_id}. "
+                        "The paper may not exist or arXiv may be temporarily unavailable."
+                    ),
+                )
+            return resp.content
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Timed out fetching PDF from arXiv. Please try again.")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("arXiv PDF fetch error for %s: %s", arxiv_id, exc)
+        raise HTTPException(status_code=502, detail="Failed to fetch PDF from arXiv.")
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -247,27 +265,30 @@ async def upload_and_analyze(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     x_trial_id: Opt[str] = Header(None, alias="X-Trial-ID"),
+    current_user: Optional[User] = Depends(get_optional_user),
 ) -> dict:
     """
     Upload a research paper PDF. Returns a paper_id immediately.
     Poll GET /api/papers/{paper_id} until status == 'complete'.
+
+    Deduplicates by SHA-256 content hash: if the same PDF was already analysed,
+    the existing analysis is reused and no LLM calls are made.
     """
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
-
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
     content = await file.read()
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail="File exceeds 50 MB limit")
     if len(content) == 0:
         raise HTTPException(status_code=400, detail="File is empty")
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="File exceeds 50 MB limit")
 
-    # ── Trial gate ────────────────────────────────────────────────────────────
-    # Signed-in users (future: pass JWT user_id) bypass this entirely.
-    # Anonymous users must supply X-Trial-ID and have uploads remaining.
-    if x_trial_id:
+    user_id = current_user.id if current_user else None
+
+    # ── Trial gate (anonymous users only) ────────────────────────────────────
+    if not user_id and x_trial_id:
         allowed = await trial_db.check_and_consume(x_trial_id)
         if not allowed:
             return JSONResponse(
@@ -275,13 +296,51 @@ async def upload_and_analyze(
                 content={"code": "trial_exhausted", "message": "Free trial used. Sign in to continue."},
             )
 
+    # ── Paper limit (signed-in users) ────────────────────────────────────────
+    if user_id:
+        count = await papers_db.count_user_papers(user_id)
+        max_papers = await papers_db.get_user_max_papers(user_id)
+        if count >= max_papers:
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "code": "paper_limit_reached",
+                    "limit": max_papers,
+                    "message": f"You've reached your {max_papers}-paper limit. Reach out to increase it.",
+                },
+            )
+
+    # ── Deduplication by content hash ────────────────────────────────────────
+    content_hash = papers_db.compute_content_hash(content)
+    existing = await papers_db.find_existing_analysis(content_hash=content_hash)
     paper_id = papers_db.generate_paper_id()
 
-    # Save to Supabase Storage if configured
-    if storage.is_configured():
-        bucket_path = storage.upload_file(
-            "anonymous", paper_id, file.filename, content
+    if existing:
+        analysis_id = existing["analysis_id"]
+        analysis_status = existing["status"]
+        await papers_db.increment_request_count(analysis_id)
+        await papers_db.create_user_paper(
+            paper_id, analysis_id, user_id=user_id, trial_id=x_trial_id,
         )
+        if analysis_status == "failed":
+            # Reset and re-run
+            await papers_db.update_analysis(
+                analysis_id=analysis_id, status="processing", error_message=None,
+            )
+            background_tasks.add_task(_run_pipeline, paper_id, analysis_id, content)
+            return {"paper_id": paper_id, "status": "processing"}
+        logger.info("Reusing existing analysis %s for paper_id=%s", analysis_id, paper_id)
+        return {"paper_id": paper_id, "status": analysis_status}
+
+    # ── New analysis ──────────────────────────────────────────────────────────
+    analysis_id = str(uuid.uuid4())
+    await papers_db.create_analysis(analysis_id, content_hash=content_hash)
+    await papers_db.create_user_paper(
+        paper_id, analysis_id, user_id=user_id, trial_id=x_trial_id,
+    )
+
+    if storage.is_configured():
+        bucket_path = storage.upload_file("anonymous", paper_id, file.filename, content)
         if bucket_path:
             expires_at = storage.make_expires_at()
             from api.models.upload import UserUpload
@@ -297,10 +356,7 @@ async def upload_and_analyze(
             )
             storage.save_upload_metadata(upload)
 
-    await papers_db.create_paper(user_id=None, paper_id=paper_id, trial_id=x_trial_id)
-
-    background_tasks.add_task(_run_pipeline, paper_id, content)
-
+    background_tasks.add_task(_run_pipeline, paper_id, analysis_id, content)
     return {"paper_id": paper_id, "status": "processing"}
 
 
@@ -309,15 +365,17 @@ async def arxiv_import(
     background_tasks: BackgroundTasks,
     body: dict = Body(...),
     x_trial_id: Opt[str] = Header(None, alias="X-Trial-ID"),
+    current_user: Optional[User] = Depends(get_optional_user),
 ) -> dict:
     """
     Accept an arXiv URL or bare arXiv ID, fetch the PDF from arxiv.org,
     then run the same analysis pipeline as upload-and-analyze.
 
+    Deduplicates by arXiv ID: if the paper was already analysed, no LLM calls
+    are made and the existing results are returned immediately.
+
     Body: { "arxiv_url": "https://arxiv.org/abs/2301.07041" }
           or  { "arxiv_url": "2301.07041" }
-
-    Returns: { paper_id, status: "processing" }
     """
     raw_input = (body.get("arxiv_url") or "").strip()
     if not raw_input:
@@ -334,8 +392,10 @@ async def arxiv_import(
             ),
         )
 
+    user_id = current_user.id if current_user else None
+
     # ── Trial gate ────────────────────────────────────────────────────────────
-    if x_trial_id:
+    if not user_id and x_trial_id:
         allowed = await trial_db.check_and_consume(x_trial_id)
         if not allowed:
             return JSONResponse(
@@ -343,41 +403,57 @@ async def arxiv_import(
                 content={"code": "trial_exhausted", "message": "Free trial used. Sign in to continue."},
             )
 
-    # Fetch PDF bytes from arXiv
-    pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
-    try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=_ARXIV_PDF_TIMEOUT) as client:
-            resp = await client.get(
-                pdf_url,
-                headers={"User-Agent": "RunPaper/1.0 (research tool; contact@runpaper.app)"},
+    # ── Paper limit ───────────────────────────────────────────────────────────
+    if user_id:
+        count = await papers_db.count_user_papers(user_id)
+        max_papers = await papers_db.get_user_max_papers(user_id)
+        if count >= max_papers:
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "code": "paper_limit_reached",
+                    "limit": max_papers,
+                    "message": f"You've reached your {max_papers}-paper limit. Reach out to increase it.",
+                },
             )
-            if resp.status_code != 200:
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"arXiv returned HTTP {resp.status_code} for {arxiv_id}. "
-                           "The paper may not exist or arXiv may be temporarily unavailable.",
-                )
-            content = resp.content
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="Timed out fetching PDF from arXiv. Please try again.")
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.error("arXiv PDF fetch error for %s: %s", arxiv_id, exc)
-        raise HTTPException(status_code=502, detail="Failed to fetch PDF from arXiv.")
 
+    # ── Deduplication by arXiv ID ─────────────────────────────────────────────
+    existing = await papers_db.find_existing_analysis(arxiv_id=arxiv_id)
+    paper_id = papers_db.generate_paper_id()
+
+    if existing:
+        analysis_id = existing["analysis_id"]
+        analysis_status = existing["status"]
+        await papers_db.increment_request_count(analysis_id)
+        await papers_db.create_user_paper(
+            paper_id, analysis_id, user_id=user_id, trial_id=x_trial_id,
+        )
+        if analysis_status == "failed":
+            content = await _fetch_arxiv_pdf(arxiv_id)
+            await papers_db.update_analysis(
+                analysis_id=analysis_id, status="processing", error_message=None,
+            )
+            background_tasks.add_task(_run_pipeline, paper_id, analysis_id, content)
+            return {"paper_id": paper_id, "status": "processing", "arxiv_id": arxiv_id}
+        logger.info("Reusing existing analysis %s for arXiv:%s", analysis_id, arxiv_id)
+        return {"paper_id": paper_id, "status": analysis_status, "arxiv_id": arxiv_id}
+
+    # ── New analysis: fetch PDF and start pipeline ────────────────────────────
+    content = await _fetch_arxiv_pdf(arxiv_id)
     if len(content) == 0:
         raise HTTPException(status_code=502, detail="arXiv returned an empty PDF.")
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail="PDF exceeds 50 MB limit.")
 
-    paper_id = papers_db.generate_paper_id()
+    analysis_id = str(uuid.uuid4())
+    await papers_db.create_analysis(analysis_id, arxiv_id=arxiv_id)
+    await papers_db.create_user_paper(
+        paper_id, analysis_id, user_id=user_id, trial_id=x_trial_id,
+    )
 
-    # Save to Supabase Storage if configured
     if storage.is_configured():
         bucket_path = storage.upload_file("anonymous", paper_id, f"{arxiv_id}.pdf", content)
         if bucket_path:
-            from datetime import timedelta
             from api.models.upload import UserUpload
             expires_at = storage.make_expires_at()
             upload = UserUpload(
@@ -392,23 +468,17 @@ async def arxiv_import(
             )
             storage.save_upload_metadata(upload)
 
-    # Create paper row — store the known arxiv_id right away so the PDF tab works instantly
-    await papers_db.create_paper(
-        user_id=None,
-        paper_id=paper_id,
-        arxiv_id=arxiv_id,
-        trial_id=x_trial_id,
-    )
-
-    background_tasks.add_task(_run_pipeline, paper_id, content)
+    background_tasks.add_task(_run_pipeline, paper_id, analysis_id, content)
     logger.info("arXiv import started for %s → paper_id=%s", arxiv_id, paper_id)
-
     return {"paper_id": paper_id, "status": "processing", "arxiv_id": arxiv_id}
 
 
-@router.get("", summary="List all papers")
-async def list_papers() -> list[PaperSummary]:
-    rows = await papers_db.list_user_papers(user_id=None)
+@router.get("", summary="List papers for the current user")
+async def list_papers(
+    current_user: Optional[User] = Depends(get_optional_user),
+) -> list[PaperSummary]:
+    user_id = current_user.id if current_user else None
+    rows = await papers_db.list_user_papers(user_id=user_id)
     return [
         PaperSummary(
             paper_id=r.get("paper_id", ""),
@@ -463,8 +533,8 @@ async def get_pdf_url(paper_id: str) -> dict:
 @router.delete("/{paper_id}", summary="Soft-delete a paper")
 async def delete_paper(paper_id: str) -> dict:
     """
-    Soft-deletes a paper by setting deleted_at. The row is never removed from the DB.
-    Returns 404 if paper doesn't exist, 204-equivalent dict on success.
+    Soft-deletes a user's link to a paper by setting user_papers.deleted_at.
+    The global paper_analyses row is preserved for other users.
     """
     row = await papers_db.get_paper(paper_id)
     if not row:
@@ -493,13 +563,13 @@ async def download_zip(paper_id: str) -> StreamingResponse:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
         file_map = {
-            "model.py": scaffold.get("model_py", ""),
-            "train.py": scaffold.get("train_py", ""),
-            "config.yaml": scaffold.get("config_yaml", ""),
+            "model.py":        scaffold.get("model_py", ""),
+            "train.py":        scaffold.get("train_py", ""),
+            "config.yaml":     scaffold.get("config_yaml", ""),
             "requirements.txt": scaffold.get("requirements_txt", ""),
         }
-        for filename, content in file_map.items():
-            zf.writestr(filename, content)
+        for filename, file_content in file_map.items():
+            zf.writestr(filename, file_content)
 
     buf.seek(0)
     return StreamingResponse(
