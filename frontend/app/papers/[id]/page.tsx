@@ -17,6 +17,7 @@ import { CodeTab } from "@/components/runpaper/CodeTab";
 import { ReproducibilityTab } from "@/components/runpaper/ReproducibilityTab";
 import { FlowchartTab } from "@/components/runpaper/FlowchartTab";
 import { ChatTab } from "@/components/runpaper/ChatTab";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { cn } from "@/lib/utils";
 
 // ── PDF Viewer ────────────────────────────────────────────────────────────────
@@ -235,10 +236,12 @@ export default function PaperPage() {
                     <div className={cn("flex gap-4", companion !== "none" && "items-start")}>
                       {/* Flowchart */}
                       <div className={companion !== "none" ? "flex-1 min-w-0" : "w-full"}>
-                        <FlowchartTab
-                          flowchart={paper.flowchart}
-                          scaffold={paper.code_scaffold}
-                        />
+                        <ErrorBoundary>
+                          <FlowchartTab
+                            flowchart={paper.flowchart}
+                            scaffold={paper.code_scaffold}
+                          />
+                        </ErrorBoundary>
                       </div>
 
                       {/* Companion panel */}
@@ -311,7 +314,9 @@ export default function PaperPage() {
 
               {/* ── Chat tab ── */}
               <TabsContent value="chat">
-                <ChatTab paperId={id} />
+                <ErrorBoundary>
+                  <ChatTab paperId={id} />
+                </ErrorBoundary>
               </TabsContent>
             </Tabs>
           </>
