@@ -9,11 +9,13 @@ GET  /api/papers/{paper_id}/download — download code scaffold as .zip
 """
 from __future__ import annotations
 
+import asyncio
 import io
 import logging
+import os
 import re
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
@@ -125,50 +127,67 @@ def _db_row_to_record(row: dict) -> PaperRecord:
 
 # ── Background pipeline ────────────────────────────────────────────────────────
 
+# How long the full 5-step pipeline is allowed to run before we give up.
+# Override with PIPELINE_TIMEOUT_SECONDS env var.
+_PIPELINE_TIMEOUT: int = int(os.environ.get("PIPELINE_TIMEOUT_SECONDS", "600"))  # 10 min
+
+
+async def _pipeline_work(paper_id: str, pdf_bytes: bytes) -> None:
+    """Inner coroutine — the actual pipeline steps (no timeout logic here)."""
+    # Step 1: Extract paper metadata
+    extraction = await extract_paper(pdf_bytes)
+
+    # Step 2: Generate code scaffold
+    code_scaffold = await generate_code(extraction)
+
+    # Step 3: Reproducibility analysis
+    paper_text = extract_text_from_pdf(pdf_bytes)
+    reproducibility = await analyze_reproducibility(extraction, paper_text)
+
+    # Detect arXiv ID from raw text for PDF fallback
+    arxiv_id = _detect_arxiv_id(paper_text)
+    if arxiv_id:
+        logger.info("Detected arXiv ID: %s", arxiv_id)
+
+    # Step 4: Flowchart + code annotations (Learn tab)
+    flowchart = await generate_flowchart(extraction, code_scaffold)
+
+    # Step 5: Pre-generate FAQ (served instantly in chat tab)
+    faq = await generate_faq(extraction, code_scaffold)
+
+    await papers_db.update_paper(
+        paper_id=paper_id,
+        status="complete",
+        title=extraction.get("title"),
+        authors_json=extraction.get("authors"),
+        arxiv_id=arxiv_id,
+        extraction_json=extraction,
+        code_scaffold_json=code_scaffold,
+        reproducibility_json=reproducibility,
+        flowchart_json=flowchart,
+        faq_json=faq,
+    )
+    logger.info("Pipeline complete for paper %s", paper_id)
+
+
 async def _run_pipeline(paper_id: str, pdf_bytes: bytes) -> None:
     """
-    Full analysis pipeline runs in the background:
-    1. Extract structured metadata from PDF
-    2. Generate Python code scaffold
-    3. Analyze reproducibility
-    4. Save all results to DB
+    Runs _pipeline_work with a hard timeout.
+    If the pipeline takes longer than PIPELINE_TIMEOUT_SECONDS, the paper
+    is marked as failed so it doesn't stay stuck in 'processing' forever.
     """
-    logger.info("Pipeline starting for paper %s", paper_id)
+    logger.info("Pipeline starting for paper %s (timeout=%ds)", paper_id, _PIPELINE_TIMEOUT)
     try:
-        # Step 1: Extract paper metadata
-        extraction = await extract_paper(pdf_bytes)
+        await asyncio.wait_for(_pipeline_work(paper_id, pdf_bytes), timeout=_PIPELINE_TIMEOUT)
 
-        # Step 2: Generate code scaffold
-        code_scaffold = await generate_code(extraction)
-
-        # Step 3: Reproducibility analysis
-        paper_text = extract_text_from_pdf(pdf_bytes)
-        reproducibility = await analyze_reproducibility(extraction, paper_text)
-
-        # Detect arXiv ID from raw text for PDF fallback
-        arxiv_id = _detect_arxiv_id(paper_text)
-        if arxiv_id:
-            logger.info("Detected arXiv ID: %s", arxiv_id)
-
-        # Step 4: Flowchart + code annotations (Learn tab)
-        flowchart = await generate_flowchart(extraction, code_scaffold)
-
-        # Step 5: Pre-generate FAQ (served instantly in chat tab)
-        faq = await generate_faq(extraction, code_scaffold)
-
+    except asyncio.TimeoutError:
+        msg = f"Pipeline timed out after {_PIPELINE_TIMEOUT}s"
+        logger.error("Pipeline TIMEOUT for paper %s", paper_id)
         await papers_db.update_paper(
             paper_id=paper_id,
-            status="complete",
-            title=extraction.get("title"),
-            authors_json=extraction.get("authors"),
-            arxiv_id=arxiv_id,
-            extraction_json=extraction,
-            code_scaffold_json=code_scaffold,
-            reproducibility_json=reproducibility,
-            flowchart_json=flowchart,
-            faq_json=faq,
+            status="failed",
+            error_message=msg,
         )
-        logger.info("Pipeline complete for paper %s", paper_id)
 
     except Exception as exc:
         logger.error("Pipeline failed for paper %s: %s", paper_id, exc, exc_info=True)
@@ -177,6 +196,48 @@ async def _run_pipeline(paper_id: str, pdf_bytes: bytes) -> None:
             status="failed",
             error_message=str(exc),
         )
+
+
+async def mark_stale_papers_failed(stale_after_minutes: int = 15) -> int:
+    """
+    Background job: find papers stuck in 'processing' for longer than
+    stale_after_minutes and mark them as failed.
+    Returns the number of papers marked.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=stale_after_minutes)
+    marked = 0
+    try:
+        from api.services import papers_db as _pdb
+        import api.services.storage as _storage
+        from supabase import create_client
+        import os as _os
+        url = _os.environ.get("SUPABASE_URL", "")
+        key = _os.environ.get("SUPABASE_SERVICE_KEY", "")
+        if not (url and key):
+            return 0
+        sb = create_client(url, key)
+        resp = (
+            sb.table("papers")
+            .select("paper_id, uploaded_at")
+            .eq("status", "processing")
+            .is_("deleted_at", "null")
+            .execute()
+        )
+        for row in (resp.data or []):
+            uploaded = datetime.fromisoformat(
+                row["uploaded_at"].replace("Z", "+00:00")
+            )
+            if uploaded < cutoff:
+                await _pdb.update_paper(
+                    paper_id=row["paper_id"],
+                    status="failed",
+                    error_message=f"Processing timed out (stale > {stale_after_minutes} min)",
+                )
+                logger.warning("Marked stale paper %s as failed", row["paper_id"])
+                marked += 1
+    except Exception as exc:
+        logger.error("mark_stale_papers_failed error: %s", exc)
+    return marked
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
