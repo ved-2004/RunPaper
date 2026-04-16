@@ -2,6 +2,7 @@
 routers/papers.py
 
 POST /api/papers/upload-and-analyze  — upload PDF, start full pipeline (background)
+POST /api/papers/arxiv-import        — import from arXiv ID or URL, start pipeline
 GET  /api/papers                     — list all papers
 GET  /api/papers/{paper_id}          — get paper results (poll until complete)
 GET  /api/papers/{paper_id}/download — download code scaffold as .zip
@@ -15,7 +16,9 @@ import zipfile
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, File, Header, HTTPException, UploadFile
+import httpx
+
+from fastapi import APIRouter, BackgroundTasks, Body, File, Header, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from typing import Optional as Opt
@@ -51,7 +54,33 @@ def _detect_arxiv_id(text: str) -> Optional[str]:
             return m.group(1).split("v")[0]
     return None
 
+
+# Patterns to parse an arXiv ID from user-supplied input (URL or bare ID)
+_ARXIV_INPUT_PATTERNS = [
+    # Full URL: https://arxiv.org/abs/2301.07041 or /pdf/2301.07041
+    re.compile(r'arxiv\.org/(?:abs|pdf)/(\d{4}\.\d{4,5}(?:v\d+)?)', re.IGNORECASE),
+    # arXiv:2301.07041 notation
+    re.compile(r'arXiv[:\s]+(\d{4}\.\d{4,5}(?:v\d+)?)', re.IGNORECASE),
+    # Bare ID: 2301.07041 or 2301.07041v2
+    re.compile(r'^(\d{4}\.\d{4,5}(?:v\d+)?)$'),
+]
+
+
+def _parse_arxiv_id_from_input(raw: str) -> Optional[str]:
+    """
+    Accept a user-supplied arXiv URL, 'arXiv:XXXX.XXXXX', or bare ID.
+    Returns the normalized ID (no version suffix) or None.
+    """
+    raw = raw.strip()
+    for pattern in _ARXIV_INPUT_PATTERNS:
+        m = pattern.search(raw)
+        if m:
+            return m.group(1).split("v")[0]
+    return None
+
+
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
+_ARXIV_PDF_TIMEOUT = 30  # seconds for fetching the PDF from arXiv
 
 
 # ── Response models ────────────────────────────────────────────────────────────
@@ -212,6 +241,108 @@ async def upload_and_analyze(
     background_tasks.add_task(_run_pipeline, paper_id, content)
 
     return {"paper_id": paper_id, "status": "processing"}
+
+
+@router.post("/arxiv-import", summary="Import a paper by arXiv URL or ID")
+async def arxiv_import(
+    background_tasks: BackgroundTasks,
+    body: dict = Body(...),
+    x_trial_id: Opt[str] = Header(None, alias="X-Trial-ID"),
+) -> dict:
+    """
+    Accept an arXiv URL or bare arXiv ID, fetch the PDF from arxiv.org,
+    then run the same analysis pipeline as upload-and-analyze.
+
+    Body: { "arxiv_url": "https://arxiv.org/abs/2301.07041" }
+          or  { "arxiv_url": "2301.07041" }
+
+    Returns: { paper_id, status: "processing" }
+    """
+    raw_input = (body.get("arxiv_url") or "").strip()
+    if not raw_input:
+        raise HTTPException(status_code=400, detail="arxiv_url is required")
+
+    arxiv_id = _parse_arxiv_id_from_input(raw_input)
+    if not arxiv_id:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Could not parse an arXiv ID from the input. "
+                "Accepted formats: 2301.07041, arXiv:2301.07041, "
+                "https://arxiv.org/abs/2301.07041"
+            ),
+        )
+
+    # ── Trial gate ────────────────────────────────────────────────────────────
+    if x_trial_id:
+        allowed = await trial_db.check_and_consume(x_trial_id)
+        if not allowed:
+            return JSONResponse(
+                status_code=403,
+                content={"code": "trial_exhausted", "message": "Free trial used. Sign in to continue."},
+            )
+
+    # Fetch PDF bytes from arXiv
+    pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=_ARXIV_PDF_TIMEOUT) as client:
+            resp = await client.get(
+                pdf_url,
+                headers={"User-Agent": "RunPaper/1.0 (research tool; contact@runpaper.app)"},
+            )
+            if resp.status_code != 200:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"arXiv returned HTTP {resp.status_code} for {arxiv_id}. "
+                           "The paper may not exist or arXiv may be temporarily unavailable.",
+                )
+            content = resp.content
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Timed out fetching PDF from arXiv. Please try again.")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("arXiv PDF fetch error for %s: %s", arxiv_id, exc)
+        raise HTTPException(status_code=502, detail="Failed to fetch PDF from arXiv.")
+
+    if len(content) == 0:
+        raise HTTPException(status_code=502, detail="arXiv returned an empty PDF.")
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="PDF exceeds 50 MB limit.")
+
+    paper_id = papers_db.generate_paper_id()
+
+    # Save to Supabase Storage if configured
+    if storage.is_configured():
+        bucket_path = storage.upload_file("anonymous", paper_id, f"{arxiv_id}.pdf", content)
+        if bucket_path:
+            from datetime import timedelta
+            from api.models.upload import UserUpload
+            expires_at = storage.make_expires_at()
+            upload = UserUpload(
+                upload_id=f"{paper_id}_pdf",
+                user_id=None,
+                filename=f"{arxiv_id}.pdf",
+                file_size_bytes=len(content),
+                bucket_path=bucket_path,
+                program_id=paper_id,
+                uploaded_at=datetime.now(timezone.utc),
+                expires_at=expires_at,
+            )
+            storage.save_upload_metadata(upload)
+
+    # Create paper row — store the known arxiv_id right away so the PDF tab works instantly
+    await papers_db.create_paper(
+        user_id=None,
+        paper_id=paper_id,
+        arxiv_id=arxiv_id,
+        trial_id=x_trial_id,
+    )
+
+    background_tasks.add_task(_run_pipeline, paper_id, content)
+    logger.info("arXiv import started for %s → paper_id=%s", arxiv_id, paper_id)
+
+    return {"paper_id": paper_id, "status": "processing", "arxiv_id": arxiv_id}
 
 
 @router.get("", summary="List all papers")

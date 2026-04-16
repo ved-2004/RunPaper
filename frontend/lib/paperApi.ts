@@ -38,6 +38,32 @@ export async function uploadAndAnalyze(file: File): Promise<{ paper_id: string }
   return res.json();
 }
 
+export async function importFromArxiv(
+  arxivUrl: string,
+): Promise<{ paper_id: string; arxiv_id: string }> {
+  const trialId = getOrCreateTrialId();
+
+  const res = await fetch(`${API_BASE_URL}/api/papers/arxiv-import`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Trial-ID": trialId,
+    },
+    body: JSON.stringify({ arxiv_url: arxivUrl }),
+  });
+
+  if (res.status === 403) {
+    const body = await res.json().catch(() => ({}));
+    if (body?.code === "trial_exhausted") throw new TrialExhaustedError();
+  }
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.detail || "Failed to import from arXiv");
+  }
+  return res.json();
+}
+
 export async function getPaper(paperId: string): Promise<PaperRecord> {
   const res = await fetch(`${API_BASE_URL}/api/papers/${paperId}`);
   if (!res.ok) throw new Error("Failed to fetch paper");
