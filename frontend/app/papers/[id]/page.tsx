@@ -107,7 +107,7 @@ export default function PaperPage() {
 
   return (
     <AppLayout requiresAuth={false}>
-      <div className="p-6 max-w-[1400px] mx-auto">
+      <div className="p-3 sm:p-6 max-w-[1400px] mx-auto">
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -143,12 +143,12 @@ export default function PaperPage() {
         ) : paper ? (
           <>
             {/* Paper header */}
-            <div className="mb-5 flex items-start justify-between gap-4">
+            <div className="mb-4 flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <h1 className="text-xl font-bold tracking-tight truncate">
+                <h1 className="text-lg sm:text-xl font-bold tracking-tight line-clamp-2 sm:truncate">
                   {paper.extraction?.title || "Paper Results"}
                 </h1>
-                <p className="text-sm text-muted-foreground mt-0.5">
+                <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 line-clamp-2">
                   {paper.extraction?.authors?.slice(0, 3).join(", ")}
                   {(paper.extraction?.authors?.length ?? 0) > 3 ? " et al." : ""}
                   {paper.extraction?.year ? ` · ${paper.extraction.year}` : ""}
@@ -165,45 +165,49 @@ export default function PaperPage() {
                   {downloading
                     ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     : <Download className="h-3.5 w-3.5" />}
-                  Download code
+                  <span className="hidden sm:inline">Download code</span>
                 </Button>
               )}
             </div>
 
             <Tabs defaultValue="learn">
-              <TabsList className="mb-4">
-                <TabsTrigger value="learn" className="gap-1.5">
-                  <Workflow className="h-3.5 w-3.5" />
-                  Learn
-                </TabsTrigger>
-                <TabsTrigger value="code" className="gap-1.5">
-                  <Code2 className="h-3.5 w-3.5" />
-                  Code
-                </TabsTrigger>
-                <TabsTrigger value="paper" className="gap-1.5">
-                  <FileIcon className="h-3.5 w-3.5" />
-                  Paper
-                </TabsTrigger>
-                <TabsTrigger value="extraction" className="gap-1.5">
-                  <FileText className="h-3.5 w-3.5" />
-                  Extraction
-                </TabsTrigger>
-                <TabsTrigger value="reproducibility" className="gap-1.5">
-                  <GitCompare className="h-3.5 w-3.5" />
-                  Reproducibility
-                </TabsTrigger>
-                <TabsTrigger value="chat" className="gap-1.5">
-                  <MessageSquare className="h-3.5 w-3.5" />
-                  Chat
-                </TabsTrigger>
-              </TabsList>
+              {/* Tabs scroll horizontally on mobile */}
+              <div className="overflow-x-auto pb-1 -mx-3 sm:mx-0 px-3 sm:px-0">
+                <TabsList className="mb-4 w-max sm:w-auto">
+                  <TabsTrigger value="learn" className="gap-1.5">
+                    <Workflow className="h-3.5 w-3.5" />
+                    Learn
+                  </TabsTrigger>
+                  <TabsTrigger value="code" className="gap-1.5">
+                    <Code2 className="h-3.5 w-3.5" />
+                    Code
+                  </TabsTrigger>
+                  <TabsTrigger value="paper" className="gap-1.5">
+                    <FileIcon className="h-3.5 w-3.5" />
+                    Paper
+                  </TabsTrigger>
+                  <TabsTrigger value="extraction" className="gap-1.5">
+                    <FileText className="h-3.5 w-3.5" />
+                    Extraction
+                  </TabsTrigger>
+                  <TabsTrigger value="reproducibility" className="gap-1.5">
+                    <GitCompare className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Reproducibility</span>
+                    <span className="sm:hidden">Repro</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="chat" className="gap-1.5">
+                    <MessageSquare className="h-3.5 w-3.5" />
+                    Chat
+                  </TabsTrigger>
+                </TabsList>
+              </div>
 
               {/* ── Learn tab — flowchart + optional companion panel ── */}
               <TabsContent value="learn">
                 {paper.flowchart && paper.code_scaffold ? (
                   <>
-                    {/* Companion controls */}
-                    <div className="flex items-center gap-2 mb-3">
+                    {/* Companion controls — desktop only */}
+                    <div className="hidden sm:flex items-center gap-2 mb-3">
                       <span className="text-xs text-muted-foreground flex items-center gap-1">
                         <PanelRight className="h-3.5 w-3.5" /> Open alongside:
                       </span>
@@ -231,10 +235,13 @@ export default function PaperPage() {
                       )}
                     </div>
 
-                    {/* Split layout */}
-                    <div className={cn("flex gap-4", companion !== "none" && "items-start")}>
+                    {/* Split layout — companion stacks below on mobile */}
+                    <div className={cn(
+                      "flex gap-4",
+                      companion !== "none" ? "flex-col sm:flex-row sm:items-start" : "flex-col",
+                    )}>
                       {/* Flowchart */}
-                      <div className={companion !== "none" ? "flex-1 min-w-0" : "w-full"}>
+                      <div className={companion !== "none" ? "w-full sm:flex-1 sm:min-w-0" : "w-full"}>
                         <FlowchartTab
                           flowchart={paper.flowchart}
                           scaffold={paper.code_scaffold}
@@ -243,7 +250,7 @@ export default function PaperPage() {
 
                       {/* Companion panel */}
                       {companion === "code" && (
-                        <div className="w-[45%] shrink-0">
+                        <div className="w-full sm:w-[45%] sm:shrink-0">
                           <div className="rounded-xl border border-border bg-card p-4">
                             <p className="text-xs font-medium text-muted-foreground mb-3 flex items-center gap-1">
                               <Code2 className="h-3.5 w-3.5" /> Code Scaffold
@@ -258,7 +265,7 @@ export default function PaperPage() {
                       )}
 
                       {companion === "paper" && (
-                        <div className="w-[45%] shrink-0">
+                        <div className="w-full sm:w-[45%] sm:shrink-0">
                           <PdfViewer paperId={id} />
                         </div>
                       )}
