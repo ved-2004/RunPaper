@@ -13,7 +13,6 @@ Endpoints:
 """
 
 from __future__ import annotations
-import collections
 import logging
 import os
 import time
@@ -103,32 +102,31 @@ app.add_middleware(
 
 
 # ─── Rate Limiting ────────────────────────────────────────────────────────────
+# Per-route sliding-window limits (see api/rate_limiter.py for thresholds):
+#   upload  → 5 / hour  | chat → 20 / min  | general → 60 / min
 
-_RATE_LIMIT_WINDOW = 60
-_RATE_LIMIT_MAX_REQUESTS = 30
-_rate_limit_store: dict[str, collections.deque] = {}
+from api.rate_limiter import check as _rl_check
 
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
-    if request.url.path == "/api/health":
+    if request.url.path in ("/api/health", "/"):
         return await call_next(request)
 
-    client_ip = request.client.host if request.client else "unknown"
-    now = time.time()
-    window = _rate_limit_store.setdefault(client_ip, collections.deque())
+    client_ip = (
+        request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+        or (request.client.host if request.client else "unknown")
+    )
 
-    while window and window[0] < now - _RATE_LIMIT_WINDOW:
-        window.popleft()
-
-    if len(window) >= _RATE_LIMIT_MAX_REQUESTS:
+    retry_after = _rl_check(client_ip, request.url.path, request.method)
+    if retry_after is not None:
+        logger.warning("Rate limit hit: ip=%s path=%s", client_ip, request.url.path)
         return JSONResponse(
             status_code=429,
-            content={"detail": "Rate limit exceeded. Try again later."},
-            headers={"Retry-After": str(_RATE_LIMIT_WINDOW)},
+            content={"detail": "Too many requests. Please slow down."},
+            headers={"Retry-After": str(retry_after)},
         )
 
-    window.append(now)
     return await call_next(request)
 
 

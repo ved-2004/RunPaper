@@ -6,7 +6,7 @@ import Link from "next/link";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { uploadAndAnalyze, TrialExhaustedError } from "@/lib/paperApi";
+import { uploadAndAnalyze, TrialExhaustedError, RateLimitError } from "@/lib/paperApi";
 import { Upload, FileText, Loader2, AlertCircle, Cpu, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -97,6 +97,9 @@ export default function UploadPage() {
     } catch (err: unknown) {
       if (err instanceof TrialExhaustedError) {
         setTrialExhausted(true);
+      } else if (err instanceof RateLimitError) {
+        const mins = Math.ceil(err.retryAfter / 60);
+        setError(`Too many uploads. Please wait ${mins} minute${mins !== 1 ? "s" : ""} and try again.`);
       } else {
         setError(err instanceof Error ? err.message : "Upload failed. Please try again.");
       }
