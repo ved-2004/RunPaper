@@ -30,5 +30,8 @@ apscheduler==3.10.4                # Scheduled TTL cleanup job
 # ── Utilities ─────────────────────────────────────────────
 python-dotenv==1.0.1
 
+# ── Error monitoring ───────────────────────────────────────
+sentry-sdk[fastapi]>=2.0.0    # Set SENTRY_DSN env var to enable; no-op if unset
+
 # ── RAG / Vector store ────────────────────────────────────
 chromadb>=0.5.0           # Persistent vector store + default ONNX embeddings

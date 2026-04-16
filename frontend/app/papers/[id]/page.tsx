@@ -18,6 +18,7 @@ import { ReproducibilityTab } from "@/components/runpaper/ReproducibilityTab";
 import { FlowchartTab } from "@/components/runpaper/FlowchartTab";
 import { ChatTab } from "@/components/runpaper/ChatTab";
 import { PaperPageSkeleton } from "@/components/runpaper/PaperPageSkeleton";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { cn } from "@/lib/utils";
 
 // ── PDF Viewer ────────────────────────────────────────────────────────────────
@@ -247,10 +248,12 @@ export default function PaperPage() {
                     )}>
                       {/* Flowchart */}
                       <div className={companion !== "none" ? "w-full sm:flex-1 sm:min-w-0" : "w-full"}>
-                        <FlowchartTab
-                          flowchart={paper.flowchart}
-                          scaffold={paper.code_scaffold}
-                        />
+                        <ErrorBoundary>
+                          <FlowchartTab
+                            flowchart={paper.flowchart}
+                            scaffold={paper.code_scaffold}
+                          />
+                        </ErrorBoundary>
                       </div>
 
                       {/* Companion panel */}
@@ -347,7 +350,9 @@ export default function PaperPage() {
 
               {/* ── Chat tab ── */}
               <TabsContent value="chat">
-                <ChatTab paperId={id} />
+                <ErrorBoundary>
+                  <ChatTab paperId={id} />
+                </ErrorBoundary>
               </TabsContent>
             </Tabs>
           </>

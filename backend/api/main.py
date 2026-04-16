@@ -21,6 +21,27 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 load_dotenv()
 
+# ── Sentry (error monitoring) ─────────────────────────────────────────────────
+# Gracefully disabled when SENTRY_DSN is not set.
+import os as _os
+_SENTRY_DSN = _os.environ.get("SENTRY_DSN", "")
+if _SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.starlette import StarletteIntegration
+        sentry_sdk.init(
+            dsn=_SENTRY_DSN,
+            integrations=[StarletteIntegration(), FastApiIntegration()],
+            traces_sample_rate=0.2,   # 20% of requests for performance tracing
+            send_default_pii=False,
+            environment=_os.environ.get("ENVIRONMENT", "development"),
+        )
+        print("Sentry initialized")
+    except ImportError:
+        print("sentry-sdk not installed — skipping Sentry init")
+# ─────────────────────────────────────────────────────────────────────────────
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
