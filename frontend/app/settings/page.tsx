@@ -8,6 +8,7 @@ import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/contexts/AuthContext";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { LogOut, ExternalLink } from "lucide-react";
+import Link from "next/link";
 
 function initials(name: string) {
   return name.split(" ").slice(0, 2).map((p) => p[0]).join("").toUpperCase();
@@ -102,6 +103,12 @@ export default function SettingsPage() {
             </Button>
           </CardContent>
         </Card>
+
+        {/* Legal links */}
+        <div className="flex items-center gap-4 text-xs text-muted-foreground pt-1">
+          <Link href="/privacy" className="hover:text-foreground transition-colors">Privacy Policy</Link>
+          <Link href="/terms" className="hover:text-foreground transition-colors">Terms of Service</Link>
+        </div>
       </div>
     </AppLayout>
   );
