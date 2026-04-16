@@ -66,3 +66,27 @@ export async function deletePaper(paperId: string): Promise<void> {
   const res = await fetch(`${API_BASE_URL}/api/papers/${paperId}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to delete paper");
 }
+
+/**
+ * After sign-in, call this to move any anonymous trial papers into the
+ * user's account.  Silently no-ops if the user had no trial papers.
+ */
+export async function migrateTrialPapers(trialId: string): Promise<number> {
+  const token = localStorage.getItem("access_token");
+  if (!token || !trialId) return 0;
+  try {
+    const res = await fetch(`${API_BASE_URL}/auth/migrate-trial`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ trial_id: trialId }),
+    });
+    if (!res.ok) return 0;
+    const data = await res.json();
+    return data.migrated ?? 0;
+  } catch {
+    return 0;
+  }
+}

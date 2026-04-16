@@ -207,7 +207,7 @@ async def upload_and_analyze(
             )
             storage.save_upload_metadata(upload)
 
-    await papers_db.create_paper(user_id=None, paper_id=paper_id)
+    await papers_db.create_paper(user_id=None, paper_id=paper_id, trial_id=x_trial_id)
 
     background_tasks.add_task(_run_pipeline, paper_id, content)
 

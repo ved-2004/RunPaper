@@ -52,15 +52,18 @@ async def create_paper(
     user_id: Optional[str],
     paper_id: str,
     arxiv_id: Optional[str] = None,
+    trial_id: Optional[str] = None,
 ) -> bool:
     """Create a new paper row with status=processing."""
-    row = {
+    row: dict[str, Any] = {
         "paper_id": paper_id,
         "user_id": user_id,
         "arxiv_id": arxiv_id,
         "uploaded_at": _now_iso(),
         "status": "processing",
     }
+    if trial_id:
+        row["trial_id"] = trial_id
 
     sb = _client()
     if sb is None:
@@ -172,6 +175,41 @@ async def list_user_papers(user_id: Optional[str] = None) -> list[dict]:
     except Exception as exc:
         logger.error("list_user_papers failed: %s", exc)
         return []
+
+
+async def migrate_trial_papers(trial_id: str, user_id: str) -> int:
+    """
+    Assign all anonymous papers with the given trial_id to user_id.
+    Returns the number of papers migrated.
+    """
+    if not trial_id or not user_id:
+        return 0
+
+    sb = _client()
+    if sb is None:
+        # In-memory fallback
+        count = 0
+        for row in _fallback_store.values():
+            if row.get("trial_id") == trial_id and not row.get("user_id"):
+                row["user_id"] = user_id
+                count += 1
+        logger.info("migrate_trial_papers (fallback): migrated %d papers", count)
+        return count
+
+    try:
+        resp = (
+            sb.table(_TABLE)
+            .update({"user_id": user_id})
+            .eq("trial_id", trial_id)
+            .is_("user_id", "null")
+            .execute()
+        )
+        count = len(resp.data) if resp.data else 0
+        logger.info("migrate_trial_papers: migrated %d papers for trial %s → user %s", count, trial_id, user_id)
+        return count
+    except Exception as exc:
+        logger.error("migrate_trial_papers failed: %s", exc)
+        return 0
 
 
 async def soft_delete_paper(paper_id: str) -> bool:

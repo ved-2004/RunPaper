@@ -207,3 +207,26 @@ async def get_me(current_user: User = Depends(get_current_user)):
 async def logout():
     """Logout is handled client-side by clearing localStorage."""
     return {"status": "logged out"}
+
+
+@router.post("/migrate-trial")
+async def migrate_trial(
+    body: dict,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Link anonymous trial papers to the now-authenticated user.
+
+    Call this once after sign-in, passing the trial ID that was stored in
+    localStorage during the anonymous session.
+
+    Body: { "trial_id": "<uuid>" }
+    Response: { "migrated": <int> }
+    """
+    trial_id = (body.get("trial_id") or "").strip()
+    if not trial_id:
+        return {"migrated": 0}
+
+    from api.services import papers_db
+    count = await papers_db.migrate_trial_papers(trial_id=trial_id, user_id=current_user.id)
+    return {"migrated": count}
