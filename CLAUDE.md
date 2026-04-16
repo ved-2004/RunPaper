@@ -201,6 +201,7 @@ Or paste each `.sql` file into the Supabase SQL editor.
 - Trial ID managed exclusively through `frontend/lib/trial.ts`
 
 ### Git
+- **Always push directly to `main`** — never create feature branches unless explicitly told to
 - Commit prefixes: `feat:`, `fix:`, `refactor:`, `chore:`
 - Never commit `.env` — only `.env.example`
 
@@ -215,3 +216,4 @@ Or paste each `.sql` file into the Supabase SQL editor.
 - ❌ Call `fetch()` directly from React components — use `lib/` functions
 - ❌ Commit secrets or `.env` files
 - ❌ Use `<form>` tags in React components — use `onClick`/`onChange` handlers
+- ❌ Create feature branches — commit and push all changes directly to `main`
