@@ -376,7 +376,7 @@ export default function PaperPage() {
               {/* ── Chat tab ── */}
               <TabsContent value="chat">
                 <ErrorBoundary>
-                  <ChatTab paperId={id} />
+                  <ChatTab paperId={id} status={paper.status} />
                 </ErrorBoundary>
               </TabsContent>
             </Tabs>

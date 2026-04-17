@@ -1,19 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { getFaq, sendMessage } from "@/lib/chatApi";
+import { sendMessage } from "@/lib/chatApi";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Send, Loader2, Bot, User, Code2, Workflow,
-  GraduationCap, Zap, RotateCcw,
+  GraduationCap, Zap, RotateCcw, Lock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { ChatMessage, ChatResponse, FaqItem } from "@/types/chat";
+import type { ChatMessage, ChatResponse } from "@/types/chat";
 
 // ── Markdown-lite renderer ────────────────────────────────────────────────────
 // Renders **bold**, `code`, and bullet points without a heavy markdown lib.
@@ -155,9 +153,10 @@ function AssistantBubble({
 
 interface ChatTabProps {
   paperId: string;
+  status: string;
 }
 
-export function ChatTab({ paperId }: ChatTabProps) {
+export function ChatTab({ paperId, status }: ChatTabProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [responses, setResponses] = useState<Map<number, ChatResponse>>(new Map());
   const [input, setInput] = useState("");
@@ -165,11 +164,7 @@ export function ChatTab({ paperId }: ChatTabProps) {
   const [mode, setMode] = useState<"direct" | "socratic">("direct");
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const { data: faq = [] } = useQuery<FaqItem[]>({
-    queryKey: ["faq", paperId],
-    queryFn: () => getFaq(paperId),
-    staleTime: Infinity,
-  });
+  const isReady = status === "complete";
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -215,6 +210,16 @@ export function ChatTab({ paperId }: ChatTabProps) {
     setResponses(new Map());
     setInput("");
   };
+
+  if (!isReady) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[75vh] rounded-xl border border-border bg-card gap-3 text-muted-foreground">
+        <Lock className="h-8 w-8 opacity-30" />
+        <p className="text-sm font-medium">Chat available once analysis is complete</p>
+        <p className="text-xs opacity-60">Still generating code and architecture diagram…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-[75vh] rounded-xl border border-border bg-card overflow-hidden">
@@ -263,42 +268,16 @@ export function ChatTab({ paperId }: ChatTabProps) {
       {/* Messages */}
       <ScrollArea className="flex-1 px-4 py-4">
         <div className="space-y-4">
-          {/* Empty state with FAQ chips */}
+          {/* Empty state */}
           {messages.length === 0 && (
-            <div className="space-y-4">
-              <div className="text-center py-4">
-                <Bot className="h-10 w-10 mx-auto text-muted-foreground/40 mb-3" />
-                <p className="text-sm font-medium">Ask anything about this paper</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {mode === "socratic"
-                    ? "Socratic mode: I'll guide your thinking with questions rather than just answering."
-                    : "Direct mode: I'll answer grounded in the paper and generated code."}
-                </p>
-              </div>
-
-              {faq.length > 0 && (
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground mb-2 text-center">
-                    Suggested questions
-                  </p>
-                  <div className="flex flex-col gap-2">
-                    {faq.map((item, i) => (
-                      <button
-                        key={i}
-                        onClick={() => handleSend(item.question)}
-                        className="w-full text-left rounded-lg border border-border bg-secondary/30 px-3 py-2.5 text-xs hover:bg-secondary/60 transition-colors group"
-                      >
-                        <span className="font-medium">{item.question}</span>
-                        {item.code_ref && (
-                          <Badge variant="secondary" className="ml-2 text-[9px] h-4">
-                            {item.code_ref}
-                          </Badge>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
+            <div className="text-center py-8">
+              <Bot className="h-10 w-10 mx-auto text-muted-foreground/40 mb-3" />
+              <p className="text-sm font-medium">Ask anything about this paper</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {mode === "socratic"
+                  ? "Socratic mode: I'll guide your thinking with questions rather than just answering."
+                  : "Direct mode: I'll answer grounded in the paper and generated code."}
+              </p>
             </div>
           )}
 

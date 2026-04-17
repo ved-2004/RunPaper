@@ -1,11 +1,5 @@
 import { API_BASE_URL } from "./config";
-import type { ChatMessage, ChatResponse, FaqItem } from "@/types/chat";
-
-export async function getFaq(paperId: string): Promise<FaqItem[]> {
-  const res = await fetch(`${API_BASE_URL}/api/papers/${paperId}/faq`);
-  if (!res.ok) return [];
-  return res.json();
-}
+import type { ChatMessage, ChatResponse } from "@/types/chat";
 
 export async function sendMessage(
   paperId: string,

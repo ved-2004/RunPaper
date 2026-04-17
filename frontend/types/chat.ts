@@ -16,9 +16,3 @@ export interface ChatResponse {
   follow_up: string | null;
 }
 
-export interface FaqItem {
-  question: string;
-  answer: string;
-  code_ref: string | null;
-  code_file: string | null;
-}
