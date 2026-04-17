@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from api.services import papers_db
-from api.chat.pipeline import chat_with_paper
+from api.services import llm_service
 
 logger = logging.getLogger(__name__)
 
@@ -71,13 +71,13 @@ async def chat(paper_id: str, req: ChatRequest) -> ChatResponse:
     if not extraction or not code_scaffold:
         raise HTTPException(status_code=400, detail="Paper data incomplete")
 
-    result = await chat_with_paper(
+    result = await llm_service.chat(
         message=req.message,
+        history=[m.model_dump() for m in req.history],
+        mode=req.mode,
         extraction=extraction,
         code_scaffold=code_scaffold,
         flowchart=flowchart,
-        history=[m.model_dump() for m in req.history],
-        mode=req.mode,
     )
 
     return ChatResponse(

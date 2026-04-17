@@ -30,6 +30,9 @@ yarn-error.log*
 # ── Claude ────────────────────────────────────────────────
 .claude/
 
+# ── LLM service (lives in its own private repo) ───────────
+llm-service/
+
 # ── OS ────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db

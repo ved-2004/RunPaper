@@ -23,7 +23,6 @@ Paper limit:
 """
 from __future__ import annotations
 
-import asyncio
 import io
 import logging
 import os
@@ -33,8 +32,6 @@ import zipfile
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-import httpx
-
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Header, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
@@ -42,36 +39,14 @@ from typing import Optional as Opt
 
 from api.services import papers_db
 from api.services import trial_db
+from api.services import llm_service
 import api.services.storage as storage
-from api.paper_extraction.pipeline import extract_paper
-from api.paper_extraction.pdf_reader import extract_text_from_pdf, clean_paper_text
-from api.code_generation.pipeline import generate_code
-from api.reproducibility.pipeline import analyze_reproducibility
-from api.flowchart.pipeline import generate_flowchart
-from api.chat.faq import generate_faq
 from api.routers.auth import get_optional_user
 from api.models.user import User
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/papers", tags=["papers"])
-
-# ── arXiv ID detection ────────────────────────────────────────────────────────
-
-_ARXIV_PATTERNS = [
-    re.compile(r'arXiv[:\s]+(\d{4}\.\d{4,5}(?:v\d+)?)', re.IGNORECASE),
-    re.compile(r'arxiv\.org/(?:abs|pdf)/(\d{4}\.\d{4,5}(?:v\d+)?)', re.IGNORECASE),
-]
-
-
-def _detect_arxiv_id(text: str) -> Optional[str]:
-    """Search raw PDF text for an arXiv identifier like 2201.11903."""
-    for pattern in _ARXIV_PATTERNS:
-        m = pattern.search(text)
-        if m:
-            return m.group(1).split("v")[0]
-    return None
-
 
 # Patterns to parse an arXiv ID from user-supplied input (URL or bare ID)
 _ARXIV_INPUT_PATTERNS = [
@@ -92,7 +67,6 @@ def _parse_arxiv_id_from_input(raw: str) -> Optional[str]:
 
 
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
-_ARXIV_PDF_TIMEOUT = 30            # seconds
 
 
 # ── Response models ───────────────────────────────────────────────────────────
@@ -135,105 +109,6 @@ def _db_row_to_record(row: dict) -> PaperRecord:
     )
 
 
-# ── Background pipeline ───────────────────────────────────────────────────────
-
-_PIPELINE_TIMEOUT: int = int(os.environ.get("PIPELINE_TIMEOUT_SECONDS", "600"))
-
-
-async def _pipeline_work(paper_id: str, analysis_id: str, pdf_bytes: bytes) -> None:
-    """
-    5-step pipeline with parallelism and incremental DB saves.
-
-    Execution order (with timings):
-      Step 1: extract_paper          — sequential, all steps depend on it  (~40s)
-      Steps 2+3 parallel:
-        generate_code (Sonnet)       — largest step                        (~70s)
-        analyze_reproducibility (GPT-4o-mini) — runs alongside code gen   (~15s)
-      Steps 4+5 parallel (after step 2):
-        generate_flowchart (Sonnet)                                        (~25s)
-        generate_faq (Haiku)                                               (~10s)
-
-    Each batch is saved to DB immediately after it completes so the frontend
-    can display tabs progressively as data arrives.
-    """
-    # ── Extract text once; clean it for all LLM calls ────────────────────────
-    raw_text = extract_text_from_pdf(pdf_bytes)
-    clean_text = clean_paper_text(raw_text)
-    arxiv_id = _detect_arxiv_id(raw_text)   # detect from full text before truncation
-    if arxiv_id:
-        logger.info("Detected arXiv ID: %s", arxiv_id)
-
-    # ── Step 1: Extraction ────────────────────────────────────────────────────
-    extraction = await extract_paper(clean_text)
-
-    # Persist extraction immediately — Extraction tab becomes readable now
-    await papers_db.update_analysis(
-        analysis_id=analysis_id,
-        status="processing",
-        title=extraction.get("title"),
-        authors_json=extraction.get("authors"),
-        arxiv_id=arxiv_id,
-        extraction_json=extraction,
-    )
-    logger.info("Step 1 done (extraction) paper_id=%s", paper_id)
-
-    # ── Steps 2+3 in parallel ─────────────────────────────────────────────────
-    # Code gen and reproducibility are independent of each other.
-    code_scaffold, reproducibility = await asyncio.gather(
-        generate_code(extraction),
-        analyze_reproducibility(extraction, clean_text),
-    )
-
-    # Persist — Code and Reproducibility tabs usable now
-    await papers_db.update_analysis(
-        analysis_id=analysis_id,
-        status="processing",
-        code_scaffold_json=code_scaffold,
-        reproducibility_json=reproducibility,
-    )
-    logger.info("Steps 2+3 done (code+repro) paper_id=%s", paper_id)
-
-    # ── Steps 4+5 in parallel ─────────────────────────────────────────────────
-    # Both need the code scaffold from step 2, so they start now.
-    flowchart, faq = await asyncio.gather(
-        generate_flowchart(extraction, code_scaffold),
-        generate_faq(extraction, code_scaffold),
-    )
-
-    # Final save — all tabs usable, mark complete
-    await papers_db.update_analysis(
-        analysis_id=analysis_id,
-        status="complete",
-        flowchart_json=flowchart,
-        faq_json=faq,
-    )
-    logger.info("Pipeline complete paper_id=%s analysis_id=%s", paper_id, analysis_id)
-
-
-async def _run_pipeline(paper_id: str, analysis_id: str, pdf_bytes: bytes) -> None:
-    """Wraps _pipeline_work with a hard timeout; marks analysis failed on error."""
-    logger.info(
-        "Pipeline starting paper_id=%s analysis_id=%s (timeout=%ds)",
-        paper_id, analysis_id, _PIPELINE_TIMEOUT,
-    )
-    try:
-        await asyncio.wait_for(
-            _pipeline_work(paper_id, analysis_id, pdf_bytes),
-            timeout=_PIPELINE_TIMEOUT,
-        )
-    except asyncio.TimeoutError:
-        msg = f"Pipeline timed out after {_PIPELINE_TIMEOUT}s"
-        logger.error("Pipeline TIMEOUT paper_id=%s", paper_id)
-        await papers_db.update_analysis(
-            analysis_id=analysis_id, status="failed", error_message=msg,
-        )
-    except Exception as exc:
-        logger.error("Pipeline failed paper_id=%s: %s", paper_id, exc, exc_info=True)
-        await papers_db.update_analysis(
-            analysis_id=analysis_id, status="failed", error_message=str(exc),
-        )
-
-
 async def mark_stale_papers_failed(stale_after_minutes: int = 15) -> int:
     """
     Background job: find analyses stuck in 'processing' for longer than
@@ -268,35 +143,6 @@ async def mark_stale_papers_failed(stale_after_minutes: int = 15) -> int:
     except Exception as exc:
         logger.error("mark_stale_papers_failed error: %s", exc)
     return marked
-
-
-# ── arXiv PDF fetcher ─────────────────────────────────────────────────────────
-
-async def _fetch_arxiv_pdf(arxiv_id: str) -> bytes:
-    """Fetch the PDF bytes for an arXiv paper. Raises HTTPException on failure."""
-    pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
-    try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=_ARXIV_PDF_TIMEOUT) as client:
-            resp = await client.get(
-                pdf_url,
-                headers={"User-Agent": "RunPaper/1.0 (research tool; contact@runpaper.app)"},
-            )
-            if resp.status_code != 200:
-                raise HTTPException(
-                    status_code=502,
-                    detail=(
-                        f"arXiv returned HTTP {resp.status_code} for {arxiv_id}. "
-                        "The paper may not exist or arXiv may be temporarily unavailable."
-                    ),
-                )
-            return resp.content
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="Timed out fetching PDF from arXiv. Please try again.")
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.error("arXiv PDF fetch error for %s: %s", arxiv_id, exc)
-        raise HTTPException(status_code=502, detail="Failed to fetch PDF from arXiv.")
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -368,7 +214,7 @@ async def upload_and_analyze(
             await papers_db.update_analysis(
                 analysis_id=analysis_id, status="processing", error_message=None,
             )
-            background_tasks.add_task(_run_pipeline, paper_id, analysis_id, content)
+            background_tasks.add_task(llm_service.trigger_pipeline, analysis_id, paper_id, content)
             return {"paper_id": paper_id, "status": "processing"}
         logger.info("Reusing existing analysis %s for paper_id=%s", analysis_id, paper_id)
         return {"paper_id": paper_id, "status": analysis_status}
@@ -397,7 +243,7 @@ async def upload_and_analyze(
             )
             storage.save_upload_metadata(upload)
 
-    background_tasks.add_task(_run_pipeline, paper_id, analysis_id, content)
+    background_tasks.add_task(llm_service.trigger_pipeline, analysis_id, paper_id, content)
     return {"paper_id": paper_id, "status": "processing"}
 
 
@@ -470,47 +316,25 @@ async def arxiv_import(
             paper_id, analysis_id, user_id=user_id, trial_id=x_trial_id,
         )
         if analysis_status == "failed":
-            content = await _fetch_arxiv_pdf(arxiv_id)
             await papers_db.update_analysis(
                 analysis_id=analysis_id, status="processing", error_message=None,
             )
-            background_tasks.add_task(_run_pipeline, paper_id, analysis_id, content)
+            background_tasks.add_task(llm_service.trigger_arxiv_pipeline, analysis_id, paper_id, arxiv_id)
             return {"paper_id": paper_id, "status": "processing", "arxiv_id": arxiv_id}
         logger.info("Reusing existing analysis %s for arXiv:%s", analysis_id, arxiv_id)
         return {"paper_id": paper_id, "status": analysis_status, "arxiv_id": arxiv_id}
 
-    # ── New analysis: fetch PDF and start pipeline ────────────────────────────
-    content = await _fetch_arxiv_pdf(arxiv_id)
-    if len(content) == 0:
-        raise HTTPException(status_code=502, detail="arXiv returned an empty PDF.")
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail="PDF exceeds 50 MB limit.")
-
+    # ── New analysis: delegate fetch + pipeline to LLM service ───────────────
+    # The LLM service fetches the PDF from arXiv itself, so the main backend
+    # never needs to handle the PDF bytes for arXiv imports.
     analysis_id = str(uuid.uuid4())
     await papers_db.create_analysis(analysis_id, arxiv_id=arxiv_id)
     await papers_db.create_user_paper(
         paper_id, analysis_id, user_id=user_id, trial_id=x_trial_id,
     )
 
-    if storage.is_configured():
-        bucket_path = storage.upload_file("anonymous", paper_id, f"{arxiv_id}.pdf", content)
-        if bucket_path:
-            from api.models.upload import UserUpload
-            expires_at = storage.make_expires_at()
-            upload = UserUpload(
-                upload_id=f"{paper_id}_pdf",
-                user_id=None,
-                filename=f"{arxiv_id}.pdf",
-                file_size_bytes=len(content),
-                bucket_path=bucket_path,
-                program_id=paper_id,
-                uploaded_at=datetime.now(timezone.utc),
-                expires_at=expires_at,
-            )
-            storage.save_upload_metadata(upload)
-
-    background_tasks.add_task(_run_pipeline, paper_id, analysis_id, content)
-    logger.info("arXiv import started for %s → paper_id=%s", arxiv_id, paper_id)
+    background_tasks.add_task(llm_service.trigger_arxiv_pipeline, analysis_id, paper_id, arxiv_id)
+    logger.info("arXiv import queued for %s → paper_id=%s", arxiv_id, paper_id)
     return {"paper_id": paper_id, "status": "processing", "arxiv_id": arxiv_id}
 
 
