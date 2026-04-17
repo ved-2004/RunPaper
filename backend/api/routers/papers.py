@@ -44,7 +44,7 @@ from api.services import papers_db
 from api.services import trial_db
 import api.services.storage as storage
 from api.paper_extraction.pipeline import extract_paper
-from api.paper_extraction.pdf_reader import extract_text_from_pdf
+from api.paper_extraction.pdf_reader import extract_text_from_pdf, clean_paper_text
 from api.code_generation.pipeline import generate_code
 from api.reproducibility.pipeline import analyze_reproducibility
 from api.flowchart.pipeline import generate_flowchart
@@ -141,32 +141,73 @@ _PIPELINE_TIMEOUT: int = int(os.environ.get("PIPELINE_TIMEOUT_SECONDS", "600"))
 
 
 async def _pipeline_work(paper_id: str, analysis_id: str, pdf_bytes: bytes) -> None:
-    """Inner coroutine — runs the 5-step pipeline and writes results to paper_analyses."""
-    extraction = await extract_paper(pdf_bytes)
-    code_scaffold = await generate_code(extraction)
-    paper_text = extract_text_from_pdf(pdf_bytes)
-    reproducibility = await analyze_reproducibility(extraction, paper_text)
+    """
+    5-step pipeline with parallelism and incremental DB saves.
 
-    arxiv_id = _detect_arxiv_id(paper_text)
+    Execution order (with timings):
+      Step 1: extract_paper          — sequential, all steps depend on it  (~40s)
+      Steps 2+3 parallel:
+        generate_code (Sonnet)       — largest step                        (~70s)
+        analyze_reproducibility (GPT-4o-mini) — runs alongside code gen   (~15s)
+      Steps 4+5 parallel (after step 2):
+        generate_flowchart (Sonnet)                                        (~25s)
+        generate_faq (Haiku)                                               (~10s)
+
+    Each batch is saved to DB immediately after it completes so the frontend
+    can display tabs progressively as data arrives.
+    """
+    # ── Extract text once; clean it for all LLM calls ────────────────────────
+    raw_text = extract_text_from_pdf(pdf_bytes)
+    clean_text = clean_paper_text(raw_text)
+    arxiv_id = _detect_arxiv_id(raw_text)   # detect from full text before truncation
     if arxiv_id:
         logger.info("Detected arXiv ID: %s", arxiv_id)
 
-    flowchart = await generate_flowchart(extraction, code_scaffold)
-    faq = await generate_faq(extraction, code_scaffold)
+    # ── Step 1: Extraction ────────────────────────────────────────────────────
+    extraction = await extract_paper(clean_text)
 
+    # Persist extraction immediately — Extraction tab becomes readable now
     await papers_db.update_analysis(
         analysis_id=analysis_id,
-        status="complete",
+        status="processing",
         title=extraction.get("title"),
         authors_json=extraction.get("authors"),
         arxiv_id=arxiv_id,
         extraction_json=extraction,
+    )
+    logger.info("Step 1 done (extraction) paper_id=%s", paper_id)
+
+    # ── Steps 2+3 in parallel ─────────────────────────────────────────────────
+    # Code gen and reproducibility are independent of each other.
+    code_scaffold, reproducibility = await asyncio.gather(
+        generate_code(extraction),
+        analyze_reproducibility(extraction, clean_text),
+    )
+
+    # Persist — Code and Reproducibility tabs usable now
+    await papers_db.update_analysis(
+        analysis_id=analysis_id,
+        status="processing",
         code_scaffold_json=code_scaffold,
         reproducibility_json=reproducibility,
+    )
+    logger.info("Steps 2+3 done (code+repro) paper_id=%s", paper_id)
+
+    # ── Steps 4+5 in parallel ─────────────────────────────────────────────────
+    # Both need the code scaffold from step 2, so they start now.
+    flowchart, faq = await asyncio.gather(
+        generate_flowchart(extraction, code_scaffold),
+        generate_faq(extraction, code_scaffold),
+    )
+
+    # Final save — all tabs usable, mark complete
+    await papers_db.update_analysis(
+        analysis_id=analysis_id,
+        status="complete",
         flowchart_json=flowchart,
         faq_json=faq,
     )
-    logger.info("Pipeline complete for paper_id=%s analysis_id=%s", paper_id, analysis_id)
+    logger.info("Pipeline complete paper_id=%s analysis_id=%s", paper_id, analysis_id)
 
 
 async def _run_pipeline(paper_id: str, analysis_id: str, pdf_bytes: bytes) -> None:

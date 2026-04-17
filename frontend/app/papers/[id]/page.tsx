@@ -10,7 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   Loader2, AlertCircle, FileText, Code2, GitCompare,
-  Workflow, FileIcon, PanelRight, X, MessageSquare, Download,
+  Workflow, FileIcon, PanelRight, X, MessageSquare, Download, Clock,
 } from "lucide-react";
 import { ExtractionTab } from "@/components/runpaper/ExtractionTab";
 import { CodeTab } from "@/components/runpaper/CodeTab";
@@ -20,6 +20,20 @@ import { ChatTab } from "@/components/runpaper/ChatTab";
 import { PaperPageSkeleton } from "@/components/runpaper/PaperPageSkeleton";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { cn } from "@/lib/utils";
+
+// ── Still-processing placeholder for a single tab ────────────────────────────
+
+function TabProcessing({ label }: { label: string }) {
+  return (
+    <Card>
+      <CardContent className="py-12 text-center">
+        <Loader2 className="h-7 w-7 mx-auto animate-spin text-primary mb-3" />
+        <p className="text-sm font-medium">{label}</p>
+        <p className="text-xs text-muted-foreground mt-1">This will appear in a few seconds…</p>
+      </CardContent>
+    </Card>
+  );
+}
 
 // ── PDF Viewer ────────────────────────────────────────────────────────────────
 
@@ -125,14 +139,14 @@ export default function PaperPage() {
               <p className="text-sm font-medium">Failed to load paper</p>
             </CardContent>
           </Card>
-        ) : paper?.status === "processing" ? (
+        ) : paper?.status === "processing" && !paper.extraction ? (
+          /* Extraction not yet done — show initial spinner */
           <Card>
             <CardContent className="py-16 text-center">
               <Loader2 className="h-10 w-10 mx-auto animate-spin text-primary mb-4" />
-              <h3 className="text-sm font-medium">Analyzing paper...</h3>
+              <h3 className="text-sm font-medium">Reading paper…</h3>
               <p className="text-xs text-muted-foreground mt-1">
-                Extracting structure, generating code, building architecture diagram.
-                This takes 60–120 seconds.
+                Extracting structure and metadata. Usually done in ~40 seconds.
               </p>
             </CardContent>
           </Card>
@@ -151,7 +165,7 @@ export default function PaperPage() {
               </Button>
             </CardContent>
           </Card>
-        ) : paper ? (
+        ) : paper?.extraction ? (
           <>
             {/* Paper header */}
             <div className="mb-4 flex items-start justify-between gap-3">
@@ -215,7 +229,9 @@ export default function PaperPage() {
 
               {/* ── Learn tab — flowchart + optional companion panel ── */}
               <TabsContent value="learn">
-                {paper.flowchart && paper.code_scaffold ? (
+                {paper.status === "processing" && !paper.flowchart ? (
+                  <TabProcessing label="Building architecture diagram…" />
+                ) : paper.flowchart && paper.code_scaffold ? (
                   <>
                     {/* Companion controls — desktop only */}
                     <div className="hidden sm:flex items-center gap-2 mb-3">
@@ -295,7 +311,9 @@ export default function PaperPage() {
 
               {/* ── Code tab ── */}
               <TabsContent value="code">
-                {paper.code_scaffold ? (
+                {paper.status === "processing" && !paper.code_scaffold ? (
+                  <TabProcessing label="Generating code scaffold…" />
+                ) : paper.code_scaffold ? (
                   <CodeTab
                     scaffold={paper.code_scaffold}
                     paperId={id}
@@ -338,7 +356,9 @@ export default function PaperPage() {
 
               {/* ── Reproducibility tab ── */}
               <TabsContent value="reproducibility">
-                {paper.reproducibility ? (
+                {paper.status === "processing" && !paper.reproducibility ? (
+                  <TabProcessing label="Analyzing reproducibility…" />
+                ) : paper.reproducibility ? (
                   <ReproducibilityTab items={paper.reproducibility} />
                 ) : (
                   <Card>
