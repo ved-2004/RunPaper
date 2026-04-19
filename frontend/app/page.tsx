@@ -87,7 +87,7 @@ export default function LandingPage() {
       </header>
 
       {/* ── Hero ── */}
-      <section className="flex-1 flex flex-col items-center justify-center text-center px-6 pt-20 pb-16 max-w-4xl mx-auto w-full">
+      <section className="flex flex-col items-center text-center px-6 pt-16 pb-14 max-w-4xl mx-auto w-full">
         {/* Badge */}
         <div className="inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary/50 px-3 py-1 text-xs font-medium text-muted-foreground mb-6">
           <Zap className="h-3 w-3 text-primary" />
