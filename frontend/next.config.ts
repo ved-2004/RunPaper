@@ -4,6 +4,8 @@ const nextConfig: NextConfig = {
   images: {
     domains: ["lh3.googleusercontent.com"],
   },
+  // Silence workspace root warning caused by root package.json (concurrently)
+  outputFileTracingRoot: require("path").join(__dirname, "../"),
 };
 
 // Wrap with Sentry only when NEXT_PUBLIC_SENTRY_DSN is set,
