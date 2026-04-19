@@ -1,0 +1,10 @@
+{
+  "name": "runpaper",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n frontend,backend,llm -c cyan,green,yellow --kill-others-on-fail \"cd frontend && npm run dev -- -p 3000\" \"cd backend && venv\\Scripts\\python -m uvicorn api.main:app --reload --port 8000\" \"cd llm-service && venv\\Scripts\\python -m uvicorn api.main:app --reload --port 8001\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}
