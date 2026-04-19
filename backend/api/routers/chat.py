@@ -1,7 +1,6 @@
 """
 routers/chat.py
 
-GET  /api/papers/{paper_id}/faq   — pre-generated Q&A chips
 POST /api/papers/{paper_id}/chat  — live chat turn
 """
 from __future__ import annotations
@@ -47,14 +46,6 @@ class ChatResponse(BaseModel):
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
-
-@router.get("/{paper_id}/faq", summary="Get pre-generated FAQ for a paper")
-async def get_faq(paper_id: str) -> list:
-    row = await papers_db.get_paper(paper_id)
-    if not row:
-        raise HTTPException(status_code=404, detail="Paper not found")
-    return row.get("faq_json") or []
-
 
 @router.post("/{paper_id}/chat", summary="Send a chat message about the paper")
 async def chat(paper_id: str, req: ChatRequest) -> ChatResponse:
