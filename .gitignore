@@ -26,6 +26,7 @@ out/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+package-lock.json  # Root workspace only; frontend/backend have their own
 
 # ── Claude ────────────────────────────────────────────────
 .claude/
