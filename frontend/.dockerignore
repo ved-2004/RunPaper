@@ -1,0 +1,47 @@
+# ── Node ──────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn
+.cache
+
+# ── Next.js ───────────────────────────────────────────
+.next/
+out/
+.turbo/
+
+# ── Version control ───────────────────────────────────
+.git
+.gitignore
+.github/
+
+# ── IDE / Editors ─────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-*
+.DS_Store
+Thumbs.db
+
+# ── Environment ───────────────────────────────────────
+.env
+.env.local
+.env.*.local
+
+# ── Build artifacts ───────────────────────────────────
+dist/
+build/
+coverage/
+
+# ── Testing ───────────────────────────────────────────
+__tests__/
+*.test.ts
+*.test.tsx
+.jest
+
+# ── Documentation ─────────────────────────────────────
+README.md
+*.md
