@@ -31,11 +31,16 @@ package-lock.json  # Root workspace only; frontend/backend have their own
 # ── Claude ────────────────────────────────────────────────
 .claude/
 
-# ── LLM service (lives in its own private repo) ───────────
-llm-service/
+# ── LLM service ──────────────────────────────────────────
+# Lives in a separate private repository (sibling directory)
+# Version control isolated for proprietary protection
 
-# ── Internal technical docs (proprietary) ──────────────────
+# ── Documentation (proprietary technical details) ────────────
+# Keep all .md files except README.md local only
 TECHNICAL.md
+DEPLOYMENT.md
+LLM_SERVICE.md
+*.local.md
 
 # ── OS ────────────────────────────────────────────────────
 .DS_Store
