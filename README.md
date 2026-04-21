@@ -1,173 +1,63 @@
 # RunPaper
 
-**From paper to PyTorch in minutes.**
+**From research to implementation in minutes.**
 
-Upload any ML/AI research paper (arXiv PDF) and get back:
+Automatically extract research papers and generate production-ready Python code scaffolds with a single click.
 
-1. **Structured Extraction** — title, authors, method, hyperparameters, datasets, and flagged ambiguities
-2. **Code Scaffold** — runnable `model.py`, `train.py`, `config.yaml`, and `requirements.txt` with `# TODO` markers where the paper is underspecified
-3. **Reproducibility Checklist** — green/red indicators for ~20 criteria (random seed, optimizer, learning rate schedule, dataset splits, hardware, etc.) with suggested defaults for anything missing
+## What You Get
 
----
+- **Structured Extraction** — Automatically parse papers to extract key methods, hyperparameters, and datasets
+- **Code Scaffold** — Runnable Python implementation with exact hyperparameters and reproducibility guidance
+- **Reproducibility Analysis** — Get a detailed checklist of what's specified vs. missing
+- **Interactive Flowchart** — Visual architecture diagram from the paper with code references
 
-## Stack
-
-| Layer | Tech |
-|---|---|
-| Frontend | Next.js 15 (App Router), Tailwind CSS, shadcn/ui, React Query |
-| Backend | FastAPI, Python 3.11+ |
-| LLM | Provider-agnostic (`anthropic` / `openai` / `gemini`) |
-| PDF parsing | PyMuPDF |
-| Auth | Google OAuth2 + JWT |
-| Storage | Supabase (Storage + Postgres) |
-| Vector store | ChromaDB |
-
----
-
-## Getting Started
+## Quick Start
 
 ### Prerequisites
-
-- Python 3.11+
 - Node.js 18+
-- A Supabase project (or skip — the app falls back to in-memory storage)
-- An API key for at least one LLM provider
+- Python 3.11+
+- API keys for LLM providers (Anthropic, OpenAI, or Google Gemini)
 
-### Backend
-
-```bash
-cd backend
-
-# (Optional) Create and activate a virtual environment
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-
-# Install dependencies
-pip install -r api/requirements.txt
-
-# Configure environment
-cp .env.example .env
-# Edit .env — set LLM_PROVIDER and the matching API key
-
-# Run
-uvicorn api.main:app --reload
-# → http://localhost:8000
-```
-
-### Frontend
-
+### Frontend (Public-facing UI)
 ```bash
 cd frontend
-
 npm install
 npm run dev
+# Opens at http://localhost:3000
 ```
+
+### Backend (Paper processing engine)
+For development setup, see `backend/.env.example` and configure your LLM provider, Supabase credentials, and Google OAuth settings.
+
+> **Note:** The LLM service has been moved to a separate private repository for version control isolation.
 
 ---
 
-## Environment Variables
+## Deployment
 
-Copy `backend/.env.example` and fill in values.
+The frontend is designed for deployment on Vercel, with the backend running on your infrastructure (Cloud Run, Docker, etc.).
 
-### Required
-
-| Variable | Description |
-|---|---|
-| `LLM_PROVIDER` | `anthropic` \| `openai` \| `gemini` |
-| `ANTHROPIC_API_KEY` | Required if `LLM_PROVIDER=anthropic` |
-| `OPENAI_API_KEY` | Required if `LLM_PROVIDER=openai` |
-| `GEMINI_API_KEY` | Required if `LLM_PROVIDER=gemini` |
-| `GOOGLE_CLIENT_ID` | Google OAuth2 client ID |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth2 client secret |
-| `JWT_SECRET` | Secret for signing JWTs |
-
-### Optional (Supabase)
-
-Without these, the app stores data in memory (resets on restart).
-
-| Variable | Description |
-|---|---|
-| `SUPABASE_URL` | Your Supabase project URL |
-| `SUPABASE_SERVICE_KEY` | Service role key |
-| `SUPABASE_BUCKET` | Storage bucket name (`runpaper-uploads`) |
-
-### LLM Model Overrides
-
-| Variable | Default |
-|---|---|
-| `ANTHROPIC_MODEL` | `claude-sonnet-4-20250514` |
-| `OPENAI_MODEL` | `gpt-4o` |
-| `GEMINI_MODEL` | `gemini-2.5-pro` |
+**Key environment variables:**
+- `NEXT_PUBLIC_API_BASE_URL` — Backend API endpoint
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` — OAuth2 credentials
+- LLM provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GEMINI_API_KEY`)
 
 ---
 
-## API
+## Architecture
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/api/health` | Health check |
-| `POST` | `/api/papers/upload-and-analyze` | Upload PDF, start pipeline |
-| `GET` | `/api/papers` | List user's papers |
-| `GET` | `/api/papers/{id}` | Get paper results (poll until `status=complete`) |
-| `GET` | `/api/papers/{id}/download` | Download code scaffold as `.zip` |
-| `GET` | `/auth/google` | Begin Google OAuth2 flow |
+RunPaper uses a multi-step pipeline to convert papers to code:
 
-The upload endpoint returns immediately with a `paper_id`. Poll `GET /api/papers/{id}` every few seconds until `status` is `complete` or `failed`.
+1. **PDF Processing** — Extract text and diagram images
+2. **Structured Extraction** — Identify method, hyperparameters, datasets
+3. **Code Generation** — Create runnable Python scaffolds
+4. **Reproducibility Analysis** — Checklist of missing details
+5. **Architecture Visualization** — Interactive flowchart with code references
 
----
-
-## Database
-
-There is a single migration file. Run it against your Supabase Postgres instance before starting the backend.
-
-**Option A — automated runner (recommended):**
-
-```bash
-cd backend
-# DATABASE_URL must be set in .env (see backend/.env.example)
-python -m api.scripts.migrate
-```
-
-**Option B — Supabase SQL editor:**
-
-Paste the contents of `backend/api/schemas/migrations/001_runpaper_schema.sql` into the SQL editor in the Supabase dashboard and run it.
-
-**Option C — psql directly:**
-
-```bash
-export DATABASE_URL=postgresql://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres
-psql $DATABASE_URL -f backend/api/schemas/migrations/001_runpaper_schema.sql
-```
-
-> The app runs without a database (in-memory fallback), but data will not persist across restarts.
+Processing typically completes in 90–110 seconds per paper.
 
 ---
 
-## Project Structure
+## Support
 
-```
-backend/
-└── api/
-    ├── main.py                    # FastAPI app entry point
-    ├── llm_client.py              # Provider-agnostic LLM interface
-    ├── paper_extraction/          # PDF → structured JSON pipeline
-    ├── code_generation/           # Extraction → code scaffold pipeline
-    ├── reproducibility/           # Extraction → checklist pipeline
-    ├── routers/                   # API route handlers
-    ├── services/                  # papers_db, storage
-    └── rag/                       # ChromaDB vector store + fetcher stubs
-
-frontend/
-├── app/                           # Next.js App Router pages
-│   ├── page.tsx                   # Landing page
-│   ├── dashboard/                 # Paper list
-│   ├── upload/                    # PDF upload
-│   ├── papers/[id]/               # Three-tab results view
-│   └── auth/callback/             # OAuth callback
-├── components/
-│   ├── runpaper/                # ExtractionTab, CodeTab, ReproducibilityTab
-│   └── layout/                    # AppLayout, AppSidebar, TopNav
-└── lib/
-    ├── paperApi.ts                # API client
-    └── config.ts                  # NEXT_PUBLIC_API_BASE_URL
-```
+For questions or issues, reach out to the team or check the project documentation.

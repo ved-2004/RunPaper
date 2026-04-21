@@ -2,15 +2,16 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getPaper, getPdfUrl, downloadZip } from "@/lib/paperApi";
+import type { PaperSummary } from "@/types/paper";
 import AppLayout from "@/components/layout/AppLayout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   Loader2, AlertCircle, FileText, Code2, GitCompare,
-  Workflow, FileIcon, PanelRight, X, MessageSquare, Download, Clock,
+  Workflow, FileIcon, PanelRight, X, MessageSquare, Download,
 } from "lucide-react";
 import { ExtractionTab } from "@/components/runpaper/ExtractionTab";
 import { CodeTab } from "@/components/runpaper/CodeTab";
@@ -94,6 +95,7 @@ export default function PaperPage() {
   const { id } = useParams<{ id: string }>();
   const [companion, setCompanion] = useState<Companion>("none");
   const [downloading, setDownloading] = useState(false);
+  const queryClient = useQueryClient();
 
   const handleDownload = async () => {
     setDownloading(true);
@@ -110,6 +112,13 @@ export default function PaperPage() {
     }
   };
 
+  // Peek at the list cache so we know if this paper was already analyzed
+  // before the full GET /api/papers/{id} call completes.
+  const cachedSummary = (
+    queryClient.getQueryData<PaperSummary[]>(["papers"]) ?? []
+  ).find((p) => p.paper_id === id);
+  const knownComplete = cachedSummary?.status === "complete";
+
   const { data: paper, isLoading, error } = useQuery({
     queryKey: ["paper", id],
     queryFn: () => getPaper(id),
@@ -124,7 +133,22 @@ export default function PaperPage() {
   if (isLoading) {
     return (
       <AppLayout requiresAuth={false}>
-        <PaperPageSkeleton />
+        {knownComplete ? (
+          /* Paper already analyzed — brief fetch from DB, no need for generic skeleton */
+          <div className="p-3 sm:p-6 max-w-[1400px] mx-auto">
+            <Card>
+              <CardContent className="py-16 text-center">
+                <Loader2 className="h-10 w-10 mx-auto animate-spin text-primary mb-4" />
+                <h3 className="text-sm font-medium">Loading from database…</h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  This paper was already analyzed. Fetching your results.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        ) : (
+          <PaperPageSkeleton />
+        )}
       </AppLayout>
     );
   }

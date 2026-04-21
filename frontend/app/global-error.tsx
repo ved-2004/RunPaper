@@ -1,6 +1,5 @@
 "use client";
 
-import * as Sentry from "@sentry/nextjs";
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle } from "lucide-react";
@@ -14,7 +13,11 @@ export default function GlobalError({
 }) {
   useEffect(() => {
     if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
-      Sentry.captureException(error);
+      // Dynamically import Sentry only when DSN is configured,
+      // so dev without Sentry doesn't trigger OpenTelemetry warnings.
+      import("@sentry/nextjs").then((Sentry) => {
+        Sentry.captureException(error);
+      });
     }
     console.error("Global error:", error);
   }, [error]);

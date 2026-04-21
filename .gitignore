@@ -33,6 +33,9 @@ yarn-error.log*
 # ── LLM service (lives in its own private repo) ───────────
 llm-service/
 
+# ── Internal technical docs (proprietary) ──────────────────
+TECHNICAL.md
+
 # ── OS ────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db

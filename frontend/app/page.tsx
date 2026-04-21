@@ -49,7 +49,7 @@ function Step({ n, title, description }: { n: number; title: string; description
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function LandingPage() {
-  const { user, isLoading } = useAuth();
+  const { user } = useAuth();
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -64,23 +64,21 @@ export default function LandingPage() {
           </Link>
 
           <div className="flex items-center gap-3">
-            {!isLoading && (
-              user ? (
-                <Button asChild size="sm">
-                  <Link href="/dashboard">
-                    Go to dashboard <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
-                  </Link>
+            {user ? (
+              <Button asChild size="sm">
+                <Link href="/dashboard">
+                  Go to dashboard <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+                </Link>
+              </Button>
+            ) : (
+              <>
+                <Button asChild size="sm" variant="ghost">
+                  <Link href="/login">Sign in</Link>
                 </Button>
-              ) : (
-                <>
-                  <Button asChild size="sm" variant="ghost">
-                    <Link href="/login">Sign in</Link>
-                  </Button>
-                  <Button asChild size="sm">
-                    <Link href="/upload">Try free</Link>
-                  </Button>
-                </>
-              )
+                <Button asChild size="sm">
+                  <Link href="/upload">Try free</Link>
+                </Button>
+              </>
             )}
           </div>
         </div>
@@ -107,24 +105,22 @@ export default function LandingPage() {
         </p>
 
         <div className="flex flex-col sm:flex-row items-center gap-3">
-          {!isLoading && (
-            user ? (
+          {user ? (
+            <Button asChild size="lg" className="gap-2 text-base px-6">
+              <Link href="/dashboard">
+                Go to my papers <ArrowRight className="h-4 w-4" />
+              </Link>
+            </Button>
+          ) : (
+            <>
               <Button asChild size="lg" className="gap-2 text-base px-6">
-                <Link href="/dashboard">
-                  Go to my papers <ArrowRight className="h-4 w-4" />
+                <Link href="/upload">
+                  <Upload className="h-4 w-4" />
+                  Try free — no account needed
                 </Link>
               </Button>
-            ) : (
-              <>
-                <Button asChild size="lg" className="gap-2 text-base px-6">
-                  <Link href="/upload">
-                    <Upload className="h-4 w-4" />
-                    Try free — no account needed
-                  </Link>
-                </Button>
-                <GoogleSignInButton />
-              </>
-            )
+              <GoogleSignInButton />
+            </>
           )}
         </div>
 
