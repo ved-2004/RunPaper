@@ -6,9 +6,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Download, FileText, ChevronRight, BookOpen, LayoutGrid } from "lucide-react";
+import { Download, FileText, ChevronRight, BookOpen, LayoutGrid, NotebookPen } from "lucide-react";
 import type { CodeScaffold, FlowchartData } from "@/types/paper";
-import { downloadZip } from "@/lib/paperApi";
+import { downloadZip, downloadNotebook } from "@/lib/paperApi";
 import SyntaxHighlighter from "react-syntax-highlighter";
 import { githubGist } from "react-syntax-highlighter/dist/esm/styles/hljs";
 import { cn } from "@/lib/utils";
@@ -38,12 +38,14 @@ interface CodeTabProps {
   scaffold: CodeScaffold;
   paperId: string;
   flowchart?: FlowchartData | null;
+  hasNotebook?: boolean;
 }
 
-export function CodeTab({ scaffold, paperId, flowchart }: CodeTabProps) {
+export function CodeTab({ scaffold, paperId, flowchart, hasNotebook }: CodeTabProps) {
   const [activeFile, setActiveFile] = useState<keyof CodeScaffold>("model_py");
   const [selectedFn, setSelectedFn] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [downloadingNb, setDownloadingNb] = useState(false);
 
   const handleDownload = async () => {
     setDownloading(true);
@@ -57,6 +59,21 @@ export function CodeTab({ scaffold, paperId, flowchart }: CodeTabProps) {
       URL.revokeObjectURL(url);
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const handleDownloadNotebook = async () => {
+    setDownloadingNb(true);
+    try {
+      const { blob, filename } = await downloadNotebook(paperId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setDownloadingNb(false);
     }
   };
 
@@ -84,10 +101,24 @@ export function CodeTab({ scaffold, paperId, flowchart }: CodeTabProps) {
           Runnable Python scaffold generated from the paper.{" "}
           <span className="text-amber-600"># TODO markers flag ambiguities.</span>
         </p>
-        <Button size="sm" variant="outline" onClick={handleDownload} disabled={downloading}>
-          <Download className="mr-1.5 h-3.5 w-3.5" />
-          {downloading ? "Downloading..." : "Download .zip"}
-        </Button>
+        <div className="flex items-center gap-2">
+          {hasNotebook && (
+            <Button
+              size="sm"
+              variant="default"
+              onClick={handleDownloadNotebook}
+              disabled={downloadingNb}
+              title="Download .ipynb — open in Google Colab or Jupyter"
+            >
+              <NotebookPen className="mr-1.5 h-3.5 w-3.5" />
+              {downloadingNb ? "Preparing…" : "Run in Colab"}
+            </Button>
+          )}
+          <Button size="sm" variant="outline" onClick={handleDownload} disabled={downloading}>
+            <Download className="mr-1.5 h-3.5 w-3.5" />
+            {downloading ? "Downloading…" : "Download .zip"}
+          </Button>
+        </div>
       </div>
 
       <div className="flex gap-3">

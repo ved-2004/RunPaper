@@ -82,6 +82,9 @@ class PaperRecord(BaseModel):
     code_scaffold: Optional[dict] = None
     reproducibility: Optional[list] = None
     flowchart: Optional[dict] = None
+    notebook_json: Optional[dict] = None
+    sanity_status: Optional[str] = None       # "passed"|"warning"|"failed"|"skipped"|"pending"
+    sanity_details: Optional[dict] = None
     error_message: Optional[str] = None
 
 
@@ -105,6 +108,9 @@ def _db_row_to_record(row: dict) -> PaperRecord:
         code_scaffold=row.get("code_scaffold_json"),
         reproducibility=row.get("reproducibility_json"),
         flowchart=row.get("flowchart_json"),
+        notebook_json=row.get("notebook_json"),
+        sanity_status=row.get("sanity_status") or "pending",
+        sanity_details=row.get("sanity_details_json"),
         error_message=row.get("error_message"),
     )
 
@@ -410,6 +416,36 @@ async def delete_paper(paper_id: str) -> dict:
         raise HTTPException(status_code=500, detail="Failed to delete paper")
 
     return {"deleted": True, "paper_id": paper_id}
+
+
+@router.get("/{paper_id}/notebook", summary="Download the generated Colab notebook (.ipynb)")
+async def download_notebook(paper_id: str) -> StreamingResponse:
+    """
+    Return the generated Jupyter notebook as a .ipynb file.
+    Open the downloaded file in Google Colab (File → Open notebook → Upload)
+    or run locally with: jupyter notebook
+    """
+    row = await papers_db.get_paper(paper_id)
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Paper {paper_id} not found")
+    if row.get("status") != "complete":
+        raise HTTPException(status_code=400, detail="Paper analysis is not complete yet")
+
+    notebook = row.get("notebook_json")
+    if not notebook:
+        raise HTTPException(status_code=404, detail="Notebook not available for this paper")
+
+    import json as _json
+    title_raw = row.get("title") or paper_id
+    safe_title = "".join(c if c.isalnum() or c in " _-" else "_" for c in title_raw)[:50].strip()
+    filename = f"{safe_title}.ipynb"
+
+    content = _json.dumps(notebook, indent=1)
+    return StreamingResponse(
+        iter([content.encode("utf-8")]),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/{paper_id}/download", summary="Download code scaffold as .zip")

@@ -115,6 +115,19 @@ export async function downloadZip(paperId: string): Promise<Blob> {
   return res.blob();
 }
 
+export async function downloadNotebook(
+  paperId: string,
+): Promise<{ blob: Blob; filename: string }> {
+  const res = await fetch(`${API_BASE_URL}/api/papers/${paperId}/notebook`);
+  if (!res.ok) throw new Error("Notebook not available");
+  const blob = await res.blob();
+  // Extract filename from Content-Disposition header if present
+  const cd = res.headers.get("Content-Disposition") ?? "";
+  const match = cd.match(/filename="([^"]+)"/);
+  const filename = match?.[1] ?? `runpaper_${paperId}.ipynb`;
+  return { blob, filename };
+}
+
 export async function getPdfUrl(paperId: string): Promise<{ url: string; source: string }> {
   const res = await fetch(`${API_BASE_URL}/api/papers/${paperId}/pdf-url`);
   if (!res.ok) throw new Error("PDF not available");

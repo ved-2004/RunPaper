@@ -84,6 +84,23 @@ export interface FlowchartData {
   annotations: Record<string, FileAnnotations>;
 }
 
+// ── Sanity badge ──────────────────────────────────────────────────────────────
+
+export type SanityStatus = "passed" | "warning" | "failed" | "skipped" | "pending";
+
+export interface SanityDetails {
+  status: SanityStatus;
+  checks: {
+    syntax_model_py?: boolean;
+    syntax_train_py?: boolean;
+    config_valid?: boolean;
+    llm_review?: boolean;
+  };
+  issues: string[];
+}
+
+// ── Paper records ─────────────────────────────────────────────────────────────
+
 export interface PaperRecord {
   paper_id: string;
   arxiv_id: string | null;
@@ -95,6 +112,9 @@ export interface PaperRecord {
   code_scaffold: CodeScaffold | null;
   reproducibility: ReproducibilityItem[] | null;
   flowchart: FlowchartData | null;
+  notebook_json: object | null;
+  sanity_status: SanityStatus | null;
+  sanity_details: SanityDetails | null;
   error_message: string | null;
 }
 
@@ -104,4 +124,5 @@ export interface PaperSummary {
   authors: string[] | null;
   uploaded_at: string;
   status: "processing" | "complete" | "failed";
+  sanity_status?: SanityStatus | null;
 }

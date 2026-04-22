@@ -10,6 +10,7 @@ import { ArrowRight, FileText, Upload } from "lucide-react";
 import Link from "next/link";
 import type { PaperSummary } from "@/types/paper";
 import { PaperListSkeleton } from "@/components/runpaper/PaperCardSkeleton";
+import { SanityBadge } from "@/components/runpaper/SanityBadge";
 
 function statusBadge(status: PaperSummary["status"]) {
   if (status === "complete") return <Badge className="bg-green-500/10 text-green-600 border-green-500/20 dark:text-green-400">Complete</Badge>;
@@ -38,6 +39,9 @@ function PaperCard({ paper }: { paper: PaperSummary }) {
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {statusBadge(paper.status)}
+            {paper.status === "complete" && paper.sanity_status && (
+              <SanityBadge status={paper.sanity_status} variant="compact" />
+            )}
             {paper.status === "complete" && (
               <Button size="sm" variant="outline" asChild>
                 <Link href={`/papers/${paper.paper_id}`}>

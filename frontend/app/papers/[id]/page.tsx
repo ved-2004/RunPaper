@@ -16,6 +16,7 @@ import {
 import { ExtractionTab } from "@/components/runpaper/ExtractionTab";
 import { CodeTab } from "@/components/runpaper/CodeTab";
 import { ReproducibilityTab } from "@/components/runpaper/ReproducibilityTab";
+import { SanityBadge } from "@/components/runpaper/SanityBadge";
 import { FlowchartTab } from "@/components/runpaper/FlowchartTab";
 import { ChatTab } from "@/components/runpaper/ChatTab";
 import { PaperPageSkeleton } from "@/components/runpaper/PaperPageSkeleton";
@@ -202,6 +203,15 @@ export default function PaperPage() {
                   {(paper.extraction?.authors?.length ?? 0) > 3 ? " et al." : ""}
                   {paper.extraction?.year ? ` · ${paper.extraction.year}` : ""}
                 </p>
+                {paper.sanity_status && paper.sanity_status !== "pending" && (
+                  <div className="mt-2">
+                    <SanityBadge
+                      status={paper.sanity_status}
+                      details={paper.sanity_details}
+                      variant="detailed"
+                    />
+                  </div>
+                )}
               </div>
               {paper.status === "complete" && paper.code_scaffold && (
                 <Button
@@ -312,6 +322,7 @@ export default function PaperPage() {
                               scaffold={paper.code_scaffold}
                               paperId={id}
                               flowchart={paper.flowchart}
+                              hasNotebook={!!paper.notebook_json}
                             />
                           </div>
                         </div>
@@ -342,6 +353,7 @@ export default function PaperPage() {
                     scaffold={paper.code_scaffold}
                     paperId={id}
                     flowchart={paper.flowchart}
+                    hasNotebook={!!paper.notebook_json}
                   />
                 ) : (
                   <Card>
