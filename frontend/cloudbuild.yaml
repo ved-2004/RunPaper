@@ -2,18 +2,21 @@
 # RunPaper Frontend — GCP Cloud Build Configuration
 # ══════════════════════════════════════════════════════════
 #
-# Builds Next.js app and deploys to Cloud Run.
-#
 # Setup:
-#   1. Connect GitHub repo to Cloud Build
-#   2. Set substitution variables (_SERVICE_NAME, _REGION)
-#   3. Create secrets for environment variables in Secret Manager
-#   4. Update --set-env-vars or --set-secrets below
+#   1. Connect GitHub repo to Cloud Build trigger (main branch)
+#   2. Set substitution variables in the trigger:
+#      _SERVICE_NAME, _REGION, _BACKEND_URL
 
 steps:
-  # Step 1: Build Docker image
-  # NEXT_PUBLIC_* vars must be passed as build args — they are inlined by
-  # `next build` and cannot be injected at runtime via --set-env-vars.
+  # Step 1: Write .env.production so `next build` bakes in the correct backend URL.
+  # NEXT_PUBLIC_* vars are inlined at build time — Cloud Run --set-env-vars has no effect.
+  - name: 'bash'
+    id: 'write-env'
+    args:
+      - '-c'
+      - 'echo "NEXT_PUBLIC_API_BASE_URL=${_BACKEND_URL}" > frontend/.env.production'
+
+  # Step 2: Build Docker image
   - name: 'gcr.io/cloud-builders/docker'
     id: 'build'
     args:
@@ -22,15 +25,14 @@ steps:
       - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:$SHORT_SHA'
       - '-t'
       - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:latest'
-      - '--build-arg'
-      - 'NEXT_PUBLIC_API_BASE_URL=${_BACKEND_URL}'
       - '-f'
       - 'frontend/Dockerfile'
       - './frontend'
     env:
       - 'DOCKER_BUILDKIT=1'
+    waitFor: ['write-env']
 
-  # Step 2: Push image to Container Registry
+  # Step 3: Push image to Container Registry
   - name: 'gcr.io/cloud-builders/docker'
     id: 'push'
     args:
@@ -38,7 +40,7 @@ steps:
       - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:$SHORT_SHA'
     waitFor: ['build']
 
-  # Step 3: Deploy to Cloud Run
+  # Step 4: Deploy to Cloud Run
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'deploy'
     args:
@@ -52,8 +54,6 @@ steps:
       - '--memory=1Gi'
       - '--timeout=60'
       - '--max-instances=100'
-      # NEXT_PUBLIC_API_BASE_URL is baked into the image at build time (see build step above).
-      # No runtime env vars needed for the frontend unless you add server-side secrets here.
     waitFor: ['push']
 
 # Image registry
@@ -61,16 +61,14 @@ images:
   - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:$SHORT_SHA'
   - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:latest'
 
-# Substitutions (set in Cloud Build trigger)
+# Substitutions — override _BACKEND_URL in the Cloud Build trigger settings
 substitutions:
   _SERVICE_NAME: 'runpaper-frontend'
   _REGION: 'us-central1'
-  _BACKEND_URL: 'https://runpaper-backend-xxx.run.app'
+  _BACKEND_URL: 'https://runpaper-backend-352633166774.us-east1.run.app'
 
-# Build timeout
 timeout: '900s'
 
-# Build options
 options:
   machineType: 'N1_HIGHCPU_8'
   logging: CLOUD_LOGGING_ONLY

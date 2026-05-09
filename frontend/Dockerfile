@@ -2,11 +2,6 @@ FROM node:20-alpine as builder
 
 WORKDIR /app
 
-# Build-time arg — must be passed via --build-arg in Cloud Build
-# NEXT_PUBLIC_* vars are inlined by `next build` and cannot be set at runtime
-ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
-
 COPY package*.json ./
 RUN npm ci
 COPY . .
