@@ -106,9 +106,15 @@ from api.routers import chat as chat_router
 app.include_router(chat_router.router)
 
 _CORS_ORIGINS = [
+    # Local dev
     "http://localhost:3000",
     "http://localhost:5173",
     "http://localhost:4173",
+    # Production — custom domain and Cloud Run URL
+    "https://runpaper.app",
+    "https://www.runpaper.app",
+    "https://runpaper-352633166774.us-central1.run.app",
+    # Additional origin from FRONTEND_URL env var (overrides / extends above)
     *(
         [os.environ["FRONTEND_URL"].rstrip("/")]
         if os.environ.get("FRONTEND_URL")

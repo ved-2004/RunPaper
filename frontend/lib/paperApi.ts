@@ -33,7 +33,7 @@ export class PaperLimitError extends Error {
 }
 
 function _authHeaders(): Record<string, string> {
-  const token = typeof window !== "undefined" ? localStorage.getItem("runpaper_token") : null;
+  const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
