@@ -12,6 +12,8 @@
 
 steps:
   # Step 1: Build Docker image
+  # NEXT_PUBLIC_* vars must be passed as build args — they are inlined by
+  # `next build` and cannot be injected at runtime via --set-env-vars.
   - name: 'gcr.io/cloud-builders/docker'
     id: 'build'
     args:
@@ -20,6 +22,8 @@ steps:
       - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:$SHORT_SHA'
       - '-t'
       - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:latest'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_API_BASE_URL=${_BACKEND_URL}'
       - '-f'
       - 'frontend/Dockerfile'
       - './frontend'
@@ -48,9 +52,8 @@ steps:
       - '--memory=1Gi'
       - '--timeout=60'
       - '--max-instances=100'
-      - '--set-env-vars=NEXT_PUBLIC_API_BASE_URL=${_BACKEND_URL}'
-      # Uncomment to set secrets from Secret Manager:
-      # - '--set-secrets=GOOGLE_CLIENT_ID=projects/PROJECT_ID/secrets/google-client-id/versions/latest'
+      # NEXT_PUBLIC_API_BASE_URL is baked into the image at build time (see build step above).
+      # No runtime env vars needed for the frontend unless you add server-side secrets here.
     waitFor: ['push']
 
 # Image registry
