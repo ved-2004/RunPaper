@@ -110,7 +110,7 @@ _CORS_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:4173",
     *(
-        [os.environ["FRONTEND_URL"]]
+        [os.environ["FRONTEND_URL"].rstrip("/")]
         if os.environ.get("FRONTEND_URL")
         else []
     ),
