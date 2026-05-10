@@ -73,7 +73,7 @@ export default function LandingPage() {
             ) : (
               <>
                 <Button asChild size="sm" variant="ghost">
-                  <Link href="/login">Sign in</Link>
+                  <Link href="/">Sign in</Link>
                 </Button>
                 <Button asChild size="sm">
                   <Link href="/upload">Try free</Link>
@@ -246,7 +246,7 @@ export default function LandingPage() {
               </Link>
             </Button>
             <Button asChild size="lg" variant="outline" className="gap-2">
-              <Link href="/login">
+              <Link href="/">
                 Sign in with Google <ChevronRight className="h-4 w-4" />
               </Link>
             </Button>

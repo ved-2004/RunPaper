@@ -1,20 +1,19 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { Suspense } from "react";
 import { getTrialId } from "@/lib/trial";
 import { migrateTrialPapers } from "@/lib/paperApi";
 
 function AuthCallbackInner() {
-  const router = useRouter();
   const searchParams = useSearchParams();
 
   useEffect(() => {
     const token = searchParams.get("token");
     if (!token) {
-      router.replace("/");
+      window.location.href = "/";
       return;
     }
 
@@ -27,9 +26,11 @@ function AuthCallbackInner() {
       migrateTrialPapers(trialId).catch(() => {});
     }
 
-    // Go straight to dashboard — AppLayout will verify auth via /auth/me
-    router.replace("/dashboard");
-  }, [searchParams, router]);
+    // Full reload so AuthContext re-initializes with the token already in localStorage.
+    // router.replace() does a client-side nav where AuthContext already ran fetchMe()
+    // before the token was stored — causing a user=null flash that redirects to /login.
+    window.location.href = "/dashboard";
+  }, [searchParams]);
 
   return (
     <div className="min-h-screen flex items-center justify-center">

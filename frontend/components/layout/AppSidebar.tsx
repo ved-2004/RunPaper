@@ -56,7 +56,7 @@ export function AppSidebar({ isTrial = false }: AppSidebarProps) {
 
   const handleLogout = async () => {
     await logout();
-    router.replace("/login");
+    router.replace("/");
   };
 
   return (
@@ -114,7 +114,7 @@ export function AppSidebar({ isTrial = false }: AppSidebarProps) {
         {isTrial ? (
           /* Trial — Sign in CTA */
           <Link
-            href="/login"
+            href="/"
             className={cn(
               "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium",
               "bg-primary/10 text-primary hover:bg-primary/20 transition-colors",

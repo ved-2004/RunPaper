@@ -23,7 +23,7 @@ export default function AppLayout({ children, requiresAuth = true }: AppLayoutPr
 
   useEffect(() => {
     if (requiresAuth && !isLoading && !user) {
-      router.replace("/login");
+      router.replace("/");
     }
   }, [isLoading, user, router, requiresAuth]);
 

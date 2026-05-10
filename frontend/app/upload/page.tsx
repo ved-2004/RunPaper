@@ -42,7 +42,7 @@ function TrialExhaustedModal({ onClose }: { onClose: () => void }) {
         </ul>
         <div className="mt-6 flex flex-col gap-2">
           <Button asChild className="w-full">
-            <Link href="/login">Sign in with Google — it's free</Link>
+            <Link href="/">Sign in with Google — it's free</Link>
           </Button>
           <Button variant="ghost" className="w-full text-muted-foreground" onClick={onClose}>
             Maybe later
