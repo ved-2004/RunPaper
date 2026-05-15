@@ -1,63 +1,73 @@
 # RunPaper
 
-**From research to implementation in minutes.**
+**Upload a research paper. Get runnable Python code in minutes.**
 
-Automatically extract research papers and generate production-ready Python code scaffolds with a single click.
+RunPaper takes an ML/AI research paper (PDF or arXiv ID) and automatically produces a runnable implementation scaffold, interactive architecture diagram, reproducibility checklist, Jupyter notebook, and a chat interface — all grounded in the paper's actual content.
 
 ## What You Get
 
-- **Structured Extraction** — Automatically parse papers to extract key methods, hyperparameters, and datasets
-- **Code Scaffold** — Runnable Python implementation with exact hyperparameters and reproducibility guidance
-- **Reproducibility Analysis** — Get a detailed checklist of what's specified vs. missing
-- **Interactive Flowchart** — Visual architecture diagram from the paper with code references
+| Tab | Output |
+|---|---|
+| **Learn** | Interactive architecture flowchart. Click any node to see its description, LaTeX math, and the exact code function that implements it. |
+| **Code** | `model.py`, `train.py`, `config.yaml`, `requirements.txt` with exact hyperparameters. `# TODO` markers where the paper is ambiguous. Download as `.zip` or run in Colab (`.ipynb`). |
+| **Extraction** | Structured metadata: title, authors, hyperparameters, key equations (KaTeX rendered), datasets. |
+| **Reproducibility** | ~20-criterion checklist of what the paper specifies vs. what's missing. |
+| **Chat** | Ask anything about the paper. Answers reference code functions and flowchart nodes. |
+| **Paper** | Original PDF rendered inline. |
+
+Plus: **Explain panel** — click any equation, hyperparameter, flowchart node, or code function for a floating inline AI explanation. **Sanity badge** — automated code quality check (syntax, config validation, LLM review).
+
+## Architecture
+
+Three services work together. The LLM pipeline lives in a companion repo ([`RunPaper-llm`](../RunPaper-llm/)):
+
+```
+Browser (port 3000)
+  └─► Backend API (port 8000)   ← auth, DB, file storage, routing
+        └─► LLM Service (port 8001)   ← pipeline, chat, explain
+```
 
 ## Quick Start
 
 ### Prerequisites
-- Node.js 18+
-- Python 3.11+
-- API keys for LLM providers (Anthropic, OpenAI, or Google Gemini)
+- Node.js 20+, Python 3.11+
+- Supabase project + Google OAuth2 credentials
+- LLM API key (Anthropic, OpenAI, or Gemini)
+- [honcho](https://honcho.readthedocs.io/) (`pip install honcho`)
 
-### Frontend (Public-facing UI)
+### Install dependencies
+
 ```bash
-cd frontend
-npm install
-npm run dev
-# Opens at http://localhost:3000
+cd backend && python -m venv venv && venv\Scripts\activate && pip install -r requirements.txt
+cd frontend && npm install
+# Also set up RunPaper-llm — see its README
 ```
 
-### Backend (Paper processing engine)
-For development setup, see `backend/.env.example` and configure your LLM provider, Supabase credentials, and Google OAuth settings.
+### Configure
 
-> **Note:** The LLM service has been moved to a separate private repository for version control isolation.
+**`backend/.env`** — `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `GOOGLE_CLIENT_ID/SECRET`, `JWT_SECRET`, `LLM_SERVICE_URL=http://localhost:8001`, `LLM_SERVICE_KEY`
+
+**`frontend/.env.local`** — `NEXT_PUBLIC_API_BASE_URL=http://localhost:8000`
+
+### Database setup
+
+Run all migration files in order in your Supabase SQL Editor (`backend/api/schemas/migrations/001` through `008`).
+
+### Run everything
+
+From the repo root (where `Procfile` lives):
+
+```bash
+honcho start
+```
+
+Starts frontend (3000), backend (8000), and LLM service (8001) with colour-coded output.
 
 ---
 
 ## Deployment
 
-The frontend is designed for deployment on Vercel, with the backend running on your infrastructure (Cloud Run, Docker, etc.).
+- **Frontend**: Vercel or Cloud Run. `NEXT_PUBLIC_API_BASE_URL` is baked in at build time — set it in `.env.production`.
+- **Backend + LLM service**: Cloud Run or any Docker host. Each has an independent `Dockerfile`.
 
-**Key environment variables:**
-- `NEXT_PUBLIC_API_BASE_URL` — Backend API endpoint
-- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` — OAuth2 credentials
-- LLM provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GEMINI_API_KEY`)
-
----
-
-## Architecture
-
-RunPaper uses a multi-step pipeline to convert papers to code:
-
-1. **PDF Processing** — Extract text and diagram images
-2. **Structured Extraction** — Identify method, hyperparameters, datasets
-3. **Code Generation** — Create runnable Python scaffolds
-4. **Reproducibility Analysis** — Checklist of missing details
-5. **Architecture Visualization** — Interactive flowchart with code references
-
-Processing typically completes in 90–110 seconds per paper.
-
----
-
-## Support
-
-For questions or issues, reach out to the team or check the project documentation.
+See [`TECHNICAL.md`](./TECHNICAL.md) for the full architecture, database schema, API reference, and deployment details.
