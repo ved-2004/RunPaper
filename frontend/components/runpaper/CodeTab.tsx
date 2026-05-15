@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Download, FileText, ChevronRight, BookOpen, LayoutGrid, NotebookPen } from "lucide-react";
-import type { CodeScaffold, FlowchartData } from "@/types/paper";
+import type { CodeScaffold, FlowchartData, PaperExtraction } from "@/types/paper";
+import { ExplainButton } from "@/components/runpaper/ExplainButton";
 import { downloadZip, downloadNotebook } from "@/lib/paperApi";
 import SyntaxHighlighter from "react-syntax-highlighter";
 import { githubGist } from "react-syntax-highlighter/dist/esm/styles/hljs";
@@ -39,9 +40,10 @@ interface CodeTabProps {
   paperId: string;
   flowchart?: FlowchartData | null;
   hasNotebook?: boolean;
+  extraction?: PaperExtraction | null;
 }
 
-export function CodeTab({ scaffold, paperId, flowchart, hasNotebook }: CodeTabProps) {
+export function CodeTab({ scaffold, paperId, flowchart, hasNotebook, extraction }: CodeTabProps) {
   const [activeFile, setActiveFile] = useState<keyof CodeScaffold>("model_py");
   const [selectedFn, setSelectedFn] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
@@ -172,26 +174,51 @@ export function CodeTab({ scaffold, paperId, flowchart, hasNotebook }: CodeTabPr
                 </button>
                 <Separator className="my-1" />
                 {functions.map((fn) => (
-                  <button
+                  // div instead of button — ExplainButton inside would create button-in-button
+                  <div
                     key={fn.name}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => setSelectedFn(fn.name === selectedFn ? null : fn.name)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ")
+                        setSelectedFn(fn.name === selectedFn ? null : fn.name);
+                    }}
                     className={cn(
-                      "w-full flex items-start gap-1.5 px-2 py-1.5 rounded text-left text-xs transition-colors",
+                      "group w-full flex items-start gap-1.5 px-2 py-1.5 rounded text-left text-xs transition-colors cursor-pointer",
                       selectedFn === fn.name
                         ? "bg-primary/10 text-primary font-medium"
                         : "text-muted-foreground hover:bg-secondary/50",
                     )}
                   >
                     <ChevronRight className="h-3 w-3 shrink-0 mt-0.5" />
-                    <div className="min-w-0">
-                      <p className="font-mono truncate text-[10px]">{fn.name}</p>
-                      {fn.component_id && (
-                        <Badge variant="secondary" className="mt-0.5 text-[9px] h-4 px-1">
-                          {fn.component_id.replaceAll("_", " ")}
-                        </Badge>
-                      )}
+                    <div className="min-w-0 flex items-start justify-between gap-1 flex-1">
+                      <div className="min-w-0">
+                        <p className="font-mono truncate text-[10px]">{fn.name}</p>
+                        {fn.component_id && (
+                          <Badge variant="secondary" className="mt-0.5 text-[9px] h-4 px-1">
+                            {fn.component_id.replaceAll("_", " ")}
+                          </Badge>
+                        )}
+                      </div>
+                      <ExplainButton
+                        className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 -mt-0.5"
+                        paperId={paperId}
+                        paperContext={{
+                          title: extraction?.title ?? null,
+                          extraction: extraction ?? null,
+                          flowchart: flowchart ?? null,
+                        }}
+                        item={{
+                          type: "code_annotation",
+                          label: fn.name,
+                          content: fn.explanation,
+                          context: `${annotationKey} — ${fn.signature}`,
+                          chatPreload: `Explain how ${fn.name} works and how it relates to the paper.`,
+                        }}
+                      />
                     </div>
-                  </button>
+                  </div>
                 ))}
               </div>
             </ScrollArea>

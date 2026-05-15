@@ -7,11 +7,13 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { TopNav } from "@/components/layout/TopNav";
 import { useAuth } from "@/contexts/AuthContext";
+import { ExplainProvider } from "@/contexts/ExplainContext";
+import { ExplainPanel } from "@/components/runpaper/ExplainPanel";
 
 interface AppLayoutProps {
   children: React.ReactNode;
   /**
-   * When true (default), unauthenticated users are redirected to /login.
+   * When true (default), unauthenticated users are redirected to /.
    * Set to false for pages that allow anonymous trial access (upload, paper view).
    */
   requiresAuth?: boolean;
@@ -39,14 +41,18 @@ export default function AppLayout({ children, requiresAuth = true }: AppLayoutPr
   if (requiresAuth && !user) return null;
 
   return (
-    <SidebarProvider defaultOpen={false}>
-      <div className="min-h-screen flex w-full">
-        <AppSidebar isTrial={!user} />
-        <div className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
-          <TopNav />
-          <main className="flex-1 overflow-auto">{children}</main>
+    <ExplainProvider>
+      <SidebarProvider defaultOpen={false}>
+        <div className="min-h-screen flex w-full">
+          <AppSidebar isTrial={!user} />
+          <div className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
+            <TopNav />
+            <main className="flex-1 overflow-auto">{children}</main>
+          </div>
         </div>
-      </div>
-    </SidebarProvider>
+      </SidebarProvider>
+      {/* Floating explain panel — rendered in a portal, always above everything */}
+      <ExplainPanel />
+    </ExplainProvider>
   );
 }

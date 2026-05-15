@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getPaper, getPdfUrl, downloadZip } from "@/lib/paperApi";
 import type { PaperSummary } from "@/types/paper";
@@ -11,7 +11,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   Loader2, AlertCircle, FileText, Code2, GitCompare,
-  Workflow, FileIcon, PanelRight, X, MessageSquare, Download,
+  Workflow, FileIcon, MessageSquare, Download,
 } from "lucide-react";
 import { ExtractionTab } from "@/components/runpaper/ExtractionTab";
 import { CodeTab } from "@/components/runpaper/CodeTab";
@@ -21,7 +21,6 @@ import { FlowchartTab } from "@/components/runpaper/FlowchartTab";
 import { ChatTab } from "@/components/runpaper/ChatTab";
 import { PaperPageSkeleton } from "@/components/runpaper/PaperPageSkeleton";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
-import { cn } from "@/lib/utils";
 
 // ── Still-processing placeholder for a single tab ────────────────────────────
 
@@ -70,31 +69,12 @@ function PdfViewer({ paperId }: { paperId: string }) {
   );
 }
 
-// ── Companion toggle button ───────────────────────────────────────────────────
-
-type Companion = "none" | "code" | "paper";
-
-function CompanionButton({
-  active, onClick, icon: Icon, label,
-}: { active: boolean; onClick: () => void; icon: React.ElementType; label: string }) {
-  return (
-    <Button
-      size="sm"
-      variant={active ? "default" : "outline"}
-      className="gap-1.5 text-xs h-7"
-      onClick={onClick}
-    >
-      <Icon className="h-3.5 w-3.5" />
-      {label}
-    </Button>
-  );
-}
-
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function PaperPage() {
   const { id } = useParams<{ id: string }>();
-  const [companion, setCompanion] = useState<Companion>("none");
+  const searchParams = useSearchParams();
+  const defaultTab = searchParams.get("tab") ?? "learn";
   const [downloading, setDownloading] = useState(false);
   const queryClient = useQueryClient();
 
@@ -127,9 +107,6 @@ export default function PaperPage() {
       query.state.data?.status === "processing" ? 3000 : false,
     enabled: !!id,
   });
-
-  const toggleCompanion = (val: Companion) =>
-    setCompanion((c) => (c === val ? "none" : val));
 
   if (isLoading) {
     return (
@@ -229,7 +206,7 @@ export default function PaperPage() {
               )}
             </div>
 
-            <Tabs defaultValue="learn">
+            <Tabs defaultValue={defaultTab}>
               {/* Tabs scroll horizontally on mobile */}
               <div className="overflow-x-auto pb-1 -mx-3 sm:mx-0 px-3 sm:px-0">
                 <TabsList className="mb-4 w-max sm:w-auto">
@@ -261,80 +238,19 @@ export default function PaperPage() {
                 </TabsList>
               </div>
 
-              {/* ── Learn tab — flowchart + optional companion panel ── */}
+              {/* ── Learn tab — architecture flowchart ── */}
               <TabsContent value="learn">
                 {paper.status === "processing" && !paper.flowchart ? (
                   <TabProcessing label="Building architecture diagram…" />
-                ) : paper.flowchart && paper.code_scaffold ? (
-                  <>
-                    {/* Companion controls — desktop only */}
-                    <div className="hidden sm:flex items-center gap-2 mb-3">
-                      <span className="text-xs text-muted-foreground flex items-center gap-1">
-                        <PanelRight className="h-3.5 w-3.5" /> Open alongside:
-                      </span>
-                      <CompanionButton
-                        active={companion === "code"}
-                        onClick={() => toggleCompanion("code")}
-                        icon={Code2}
-                        label="Code"
-                      />
-                      <CompanionButton
-                        active={companion === "paper"}
-                        onClick={() => toggleCompanion("paper")}
-                        icon={FileIcon}
-                        label="Paper"
-                      />
-                      {companion !== "none" && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 w-7 p-0 text-muted-foreground"
-                          onClick={() => setCompanion("none")}
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </Button>
-                      )}
-                    </div>
-
-                    {/* Split layout — companion stacks below on mobile */}
-                    <div className={cn(
-                      "flex gap-4",
-                      companion !== "none" ? "flex-col sm:flex-row sm:items-start" : "flex-col",
-                    )}>
-                      {/* Flowchart */}
-                      <div className={companion !== "none" ? "w-full sm:flex-1 sm:min-w-0" : "w-full"}>
-                        <ErrorBoundary>
-                          <FlowchartTab
-                            flowchart={paper.flowchart}
-                            scaffold={paper.code_scaffold}
-                          />
-                        </ErrorBoundary>
-                      </div>
-
-                      {/* Companion panel */}
-                      {companion === "code" && (
-                        <div className="w-full sm:w-[45%] sm:shrink-0">
-                          <div className="rounded-xl border border-border bg-card p-4">
-                            <p className="text-xs font-medium text-muted-foreground mb-3 flex items-center gap-1">
-                              <Code2 className="h-3.5 w-3.5" /> Code Scaffold
-                            </p>
-                            <CodeTab
-                              scaffold={paper.code_scaffold}
-                              paperId={id}
-                              flowchart={paper.flowchart}
-                              hasNotebook={!!paper.notebook_json}
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      {companion === "paper" && (
-                        <div className="w-full sm:w-[45%] sm:shrink-0">
-                          <PdfViewer paperId={id} />
-                        </div>
-                      )}
-                    </div>
-                  </>
+                ) : paper.flowchart ? (
+                  <ErrorBoundary>
+                    <FlowchartTab
+                      flowchart={paper.flowchart}
+                      scaffold={paper.code_scaffold ?? { model_py: "", train_py: "", config_yaml: "", requirements_txt: "" }}
+                      paperId={id}
+                      extraction={paper.extraction}
+                    />
+                  </ErrorBoundary>
                 ) : (
                   <Card>
                     <CardContent className="py-12 text-center text-sm text-muted-foreground">
@@ -354,6 +270,7 @@ export default function PaperPage() {
                     paperId={id}
                     flowchart={paper.flowchart}
                     hasNotebook={!!paper.notebook_json}
+                    extraction={paper.extraction}
                   />
                 ) : (
                   <Card>
@@ -376,7 +293,11 @@ export default function PaperPage() {
               {/* ── Extraction tab ── */}
               <TabsContent value="extraction">
                 {paper.extraction ? (
-                  <ExtractionTab extraction={paper.extraction} />
+                  <ExtractionTab
+                    extraction={paper.extraction}
+                    paperId={id}
+                    flowchart={paper.flowchart}
+                  />
                 ) : (
                   <Card>
                     <CardContent className="py-12 text-center">

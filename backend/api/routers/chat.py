@@ -45,7 +45,38 @@ class ChatResponse(BaseModel):
     follow_up: Optional[str] = None
 
 
+class ExplainRequest(BaseModel):
+    item_type: str   # flowchart_node | equation | hyperparameter | code_annotation
+    item_label: str
+    item_content: str
+    item_context: Optional[str] = None
+    paper_title: Optional[str] = None
+    extraction_summary: Optional[str] = None
+
+
+class ExplainResponse(BaseModel):
+    explanation: str
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
+@router.post("/{paper_id}/explain", summary="Get an AI explanation for a specific item")
+async def explain(paper_id: str, req: ExplainRequest) -> ExplainResponse:
+    row = await papers_db.get_paper(paper_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Paper not found")
+
+    result = await llm_service.explain(
+        item_type=req.item_type,
+        item_label=req.item_label,
+        item_content=req.item_content,
+        item_context=req.item_context,
+        paper_title=req.paper_title,
+        extraction_summary=req.extraction_summary,
+    )
+
+    return ExplainResponse(explanation=result.get("explanation", ""))
+
 
 @router.post("/{paper_id}/chat", summary="Send a chat message about the paper")
 async def chat(paper_id: str, req: ChatRequest) -> ChatResponse:

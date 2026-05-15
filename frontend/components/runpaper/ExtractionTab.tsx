@@ -4,13 +4,28 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { TexMath } from "@/components/ui/katex-math";
 import { ExternalLink } from "lucide-react";
-import type { PaperExtraction } from "@/types/paper";
+import type { PaperExtraction, FlowchartData } from "@/types/paper";
+import { ExplainButton } from "@/components/runpaper/ExplainButton";
 
 function datasetSearchUrl(name: string): string {
   return `https://paperswithcode.com/datasets?q=${encodeURIComponent(name)}`;
 }
 
-export function ExtractionTab({ extraction }: { extraction: PaperExtraction }) {
+interface ExtractionTabProps {
+  extraction: PaperExtraction;
+  /** Required for the Explain buttons to work. */
+  paperId?: string;
+  flowchart?: FlowchartData | null;
+}
+
+export function ExtractionTab({ extraction, paperId, flowchart }: ExtractionTabProps) {
+  const canExplain = !!paperId;
+  const paperContext = {
+    title: extraction.title ?? null,
+    extraction,
+    flowchart: flowchart ?? null,
+  };
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -64,8 +79,25 @@ export function ExtractionTab({ extraction }: { extraction: PaperExtraction }) {
                 <p className="text-xs font-medium text-muted-foreground mb-2">Key Equations</p>
                 <div className="space-y-2">
                   {extraction.method.key_equations.map((eq, i) => (
-                    <div key={i} className="rounded-lg bg-muted px-4 py-3 overflow-x-auto">
+                    <div
+                      key={i}
+                      className="group relative rounded-lg bg-muted px-4 py-3 overflow-x-auto"
+                    >
                       <TexMath tex={eq} display />
+                      {canExplain && (
+                        <ExplainButton
+                          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                          paperId={paperId!}
+                          paperContext={paperContext}
+                          item={{
+                            type: "equation",
+                            label: `Equation ${i + 1}`,
+                            content: eq,
+                            context: `Key equation from ${extraction.title ?? "paper"}`,
+                            chatPreload: `What does this equation mean: ${eq}?`,
+                          }}
+                        />
+                      )}
                     </div>
                   ))}
                 </div>
@@ -94,11 +126,29 @@ export function ExtractionTab({ extraction }: { extraction: PaperExtraction }) {
                 </thead>
                 <tbody className="divide-y divide-border">
                   {extraction.hyperparameters.map((hp, i) => (
-                    <tr key={i}>
+                    <tr key={i} className="group">
                       <td className="py-2.5 pr-4 font-mono text-xs">{hp.name}</td>
                       <td className="py-2.5 pr-4 font-mono text-xs text-primary font-medium">{hp.value}</td>
                       <td className="py-2.5 pr-4 text-xs text-muted-foreground whitespace-nowrap">{hp.source}</td>
-                      <td className="py-2.5 text-xs text-muted-foreground">{hp.description ?? "—"}</td>
+                      <td className="py-2.5 text-xs text-muted-foreground">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="min-w-0">{hp.description ?? "—"}</span>
+                          {canExplain && (
+                            <ExplainButton
+                              className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                              paperId={paperId!}
+                              paperContext={paperContext}
+                              item={{
+                                type: "hyperparameter",
+                                label: hp.name,
+                                content: `Value: ${hp.value}.${hp.description ? ` ${hp.description}` : ""}`,
+                                context: `From ${hp.source}`,
+                                chatPreload: `Why is ${hp.name}=${hp.value} used in this paper?`,
+                              }}
+                            />
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

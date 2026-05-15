@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import "@xyflow/react/dist/style.css";
 import {
   ReactFlow,
   Background,
@@ -13,12 +14,11 @@ import {
   type Edge,
   type NodeProps,
 } from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
-import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Code2, Sigma, Info, X } from "lucide-react";
 import { TexMath } from "@/components/ui/katex-math";
-import type { FlowchartData, FlowchartNode, CodeScaffold } from "@/types/paper";
+import type { FlowchartData, FlowchartNode, CodeScaffold, PaperExtraction } from "@/types/paper";
+import { ExplainButton } from "@/components/runpaper/ExplainButton";
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 
@@ -100,9 +100,12 @@ interface DrawerProps {
   onClose: () => void;
   snippet: string;
   styles: typeof TYPE_STYLES.process;
+  paperId?: string;
+  flowchart: FlowchartData;
+  extraction?: PaperExtraction | null;
 }
 
-function NodeDrawer({ selected, onClose, snippet, styles }: DrawerProps) {
+function NodeDrawer({ selected, onClose, snippet, styles, paperId, flowchart, extraction }: DrawerProps) {
   const [width, setWidth] = useState(DRAWER_DEFAULT);
   const dragging = useRef(false);
   const startX = useRef(0);
@@ -185,8 +188,32 @@ function NodeDrawer({ selected, onClose, snippet, styles }: DrawerProps) {
             {/* Description */}
             <div className="flex gap-2">
               <Info className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
-              <p className="text-sm text-foreground leading-relaxed">{selected.description}</p>
+              <p className="text-sm text-foreground leading-relaxed flex-1 min-w-0">
+                {selected.description}
+              </p>
             </div>
+
+            {/* Explain button */}
+            {paperId && (
+              <div className="flex items-center gap-2">
+                <ExplainButton
+                  paperId={paperId}
+                  paperContext={{
+                    title: extraction?.title ?? null,
+                    extraction: extraction ?? null,
+                    flowchart,
+                  }}
+                  item={{
+                    type: "flowchart_node",
+                    label: selected.label,
+                    content: `${selected.description}${selected.math ? ` — Math: ${selected.math}` : ""}`,
+                    context: `${selected.code_file} → ${selected.code_ref}`,
+                    chatPreload: `Can you explain how ${selected.label} works in this paper?`,
+                  }}
+                />
+                <span className="text-xs text-muted-foreground">Explain this component</span>
+              </div>
+            )}
 
             {/* Math */}
             {selected.math && (
@@ -238,9 +265,12 @@ function NodeDrawer({ selected, onClose, snippet, styles }: DrawerProps) {
 interface FlowchartTabProps {
   flowchart: FlowchartData;
   scaffold: CodeScaffold;
+  /** Optional: enables Explain buttons inside node drawer */
+  paperId?: string;
+  extraction?: PaperExtraction | null;
 }
 
-export function FlowchartTab({ flowchart, scaffold }: FlowchartTabProps) {
+export function FlowchartTab({ flowchart, scaffold, paperId, extraction }: FlowchartTabProps) {
   const [selected, setSelected] = useState<FlowchartNode | null>(null);
 
   const positions = useMemo(() => computePositions(flowchart.nodes), [flowchart.nodes]);
@@ -328,6 +358,9 @@ export function FlowchartTab({ flowchart, scaffold }: FlowchartTabProps) {
         onClose={() => setSelected(null)}
         snippet={snippet}
         styles={styles}
+        paperId={paperId}
+        flowchart={flowchart}
+        extraction={extraction}
       />
     </>
   );

@@ -95,6 +95,42 @@ async def trigger_arxiv_pipeline(
         raise
 
 
+async def explain(
+    item_type: str,
+    item_label: str,
+    item_content: str,
+    item_context: Optional[str],
+    paper_title: Optional[str],
+    extraction_summary: Optional[str],
+) -> dict:
+    """
+    Ask the LLM service to explain a specific concept from the paper.
+    Returns {"explanation": "...markdown..."}.
+    Falls back to a generic error message if the service is unavailable.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=_CHAT_TIMEOUT) as client:
+            resp = await client.post(
+                f"{_LLM_SERVICE_URL}/explain",
+                headers=_headers(),
+                json={
+                    "item_type":          item_type,
+                    "item_label":         item_label,
+                    "item_content":       item_content,
+                    "item_context":       item_context,
+                    "paper_title":        paper_title,
+                    "extraction_summary": extraction_summary,
+                },
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except Exception as exc:
+        logger.error("LLM service explain failed: %s", exc)
+        return {
+            "explanation": "The AI assistant is temporarily unavailable. Please try again.",
+        }
+
+
 async def chat(
     message: str,
     history: list,
