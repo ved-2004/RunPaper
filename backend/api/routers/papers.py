@@ -17,9 +17,12 @@ Deduplication:
   If the analysis is 'processing', the new row is still created and the user polls
   the same underlying analysis. If 'failed', the analysis is reset and re-run.
 
-Paper limit:
-  Signed-in users are limited to max_papers (default 5). Exceeding this returns
-  403 {"code": "paper_limit_reached", "limit": N}.
+Credits:
+  Authenticated users need ≥ 1 credit to submit a paper (checked at submission).
+  1 credit is deducted lazily on the first GET /api/papers/{id} that observes
+  status=complete, using credit_consumed on the user_papers row to ensure
+  exactly-once deduction even under concurrent requests.
+  Anonymous submissions are rejected with 401.
 """
 from __future__ import annotations
 
@@ -32,13 +35,12 @@ import zipfile
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Header, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
-from typing import Optional as Opt
 
 from api.services import papers_db
-from api.services import trial_db
+from api.services import users_db
 from api.services import llm_service
 import api.services.storage as storage
 from api.routers.auth import get_optional_user
@@ -157,16 +159,21 @@ async def mark_stale_papers_failed(stale_after_minutes: int = 15) -> int:
 async def upload_and_analyze(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    x_trial_id: Opt[str] = Header(None, alias="X-Trial-ID"),
     current_user: Optional[User] = Depends(get_optional_user),
 ) -> dict:
     """
     Upload a research paper PDF. Returns a paper_id immediately.
     Poll GET /api/papers/{paper_id} until status == 'complete'.
 
+    Requires authentication and ≥ 1 credit. Credit is deducted lazily on first
+    successful GET once the analysis is complete.
+
     Deduplicates by SHA-256 content hash: if the same PDF was already analysed,
     the existing analysis is reused and no LLM calls are made.
     """
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Sign in to upload papers")
+
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
     if not file.filename.lower().endswith(".pdf"):
@@ -178,30 +185,18 @@ async def upload_and_analyze(
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail="File exceeds 50 MB limit")
 
-    user_id = current_user.id if current_user else None
+    user_id = current_user.id
 
-    # ── Trial gate (anonymous users only) ────────────────────────────────────
-    if not user_id and x_trial_id:
-        allowed = await trial_db.check_and_consume(x_trial_id)
-        if not allowed:
-            return JSONResponse(
-                status_code=403,
-                content={"code": "trial_exhausted", "message": "Free trial used. Sign in to continue."},
-            )
-
-    # ── Paper limit (signed-in users) ────────────────────────────────────────
-    if user_id:
-        count = await papers_db.count_user_papers(user_id)
-        max_papers = await papers_db.get_user_max_papers(user_id)
-        if count >= max_papers:
-            return JSONResponse(
-                status_code=403,
-                content={
-                    "code": "paper_limit_reached",
-                    "limit": max_papers,
-                    "message": f"You've reached your {max_papers}-paper limit. Reach out to increase it.",
-                },
-            )
+    # ── Credit gate ───────────────────────────────────────────────────────────
+    credits = users_db.get_credits(user_id)
+    if credits < 1:
+        return JSONResponse(
+            status_code=403,
+            content={
+                "code": "insufficient_credits",
+                "message": "You've used all your credits. Submit feedback to get more.",
+            },
+        )
 
     # ── Deduplication by content hash ────────────────────────────────────────
     content_hash = papers_db.compute_content_hash(content)
@@ -212,9 +207,8 @@ async def upload_and_analyze(
         analysis_id = existing["analysis_id"]
         analysis_status = existing["status"]
         await papers_db.increment_request_count(analysis_id)
-        await papers_db.create_user_paper(
-            paper_id, analysis_id, user_id=user_id, trial_id=x_trial_id,
-        )
+        await papers_db.create_user_paper(paper_id, analysis_id, user_id=user_id)
+        await papers_db.consume_credit_for_paper(paper_id, user_id)
         if analysis_status == "failed":
             # Reset and re-run
             await papers_db.update_analysis(
@@ -228,18 +222,17 @@ async def upload_and_analyze(
     # ── New analysis ──────────────────────────────────────────────────────────
     analysis_id = str(uuid.uuid4())
     await papers_db.create_analysis(analysis_id, content_hash=content_hash)
-    await papers_db.create_user_paper(
-        paper_id, analysis_id, user_id=user_id, trial_id=x_trial_id,
-    )
+    await papers_db.create_user_paper(paper_id, analysis_id, user_id=user_id)
+    await papers_db.consume_credit_for_paper(paper_id, user_id)
 
     if storage.is_configured():
-        bucket_path = storage.upload_file("anonymous", paper_id, file.filename, content)
+        bucket_path = storage.upload_file(user_id, paper_id, file.filename, content)
         if bucket_path:
             expires_at = storage.make_expires_at()
             from api.models.upload import UserUpload
             upload = UserUpload(
                 upload_id=f"{paper_id}_pdf",
-                user_id=None,
+                user_id=user_id,
                 filename=file.filename,
                 file_size_bytes=len(content),
                 bucket_path=bucket_path,
@@ -257,12 +250,14 @@ async def upload_and_analyze(
 async def arxiv_import(
     background_tasks: BackgroundTasks,
     body: dict = Body(...),
-    x_trial_id: Opt[str] = Header(None, alias="X-Trial-ID"),
     current_user: Optional[User] = Depends(get_optional_user),
 ) -> dict:
     """
     Accept an arXiv URL or bare arXiv ID, fetch the PDF from arxiv.org,
     then run the same analysis pipeline as upload-and-analyze.
+
+    Requires authentication and ≥ 1 credit. Credit is deducted lazily on first
+    successful GET once the analysis is complete.
 
     Deduplicates by arXiv ID: if the paper was already analysed, no LLM calls
     are made and the existing results are returned immediately.
@@ -270,6 +265,9 @@ async def arxiv_import(
     Body: { "arxiv_url": "https://arxiv.org/abs/2301.07041" }
           or  { "arxiv_url": "2301.07041" }
     """
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Sign in to import papers")
+
     raw_input = (body.get("arxiv_url") or "").strip()
     if not raw_input:
         raise HTTPException(status_code=400, detail="arxiv_url is required")
@@ -285,30 +283,18 @@ async def arxiv_import(
             ),
         )
 
-    user_id = current_user.id if current_user else None
+    user_id = current_user.id
 
-    # ── Trial gate ────────────────────────────────────────────────────────────
-    if not user_id and x_trial_id:
-        allowed = await trial_db.check_and_consume(x_trial_id)
-        if not allowed:
-            return JSONResponse(
-                status_code=403,
-                content={"code": "trial_exhausted", "message": "Free trial used. Sign in to continue."},
-            )
-
-    # ── Paper limit ───────────────────────────────────────────────────────────
-    if user_id:
-        count = await papers_db.count_user_papers(user_id)
-        max_papers = await papers_db.get_user_max_papers(user_id)
-        if count >= max_papers:
-            return JSONResponse(
-                status_code=403,
-                content={
-                    "code": "paper_limit_reached",
-                    "limit": max_papers,
-                    "message": f"You've reached your {max_papers}-paper limit. Reach out to increase it.",
-                },
-            )
+    # ── Credit gate ───────────────────────────────────────────────────────────
+    credits = users_db.get_credits(user_id)
+    if credits < 1:
+        return JSONResponse(
+            status_code=403,
+            content={
+                "code": "insufficient_credits",
+                "message": "You've used all your credits. Submit feedback to get more.",
+            },
+        )
 
     # ── Deduplication by arXiv ID ─────────────────────────────────────────────
     existing = await papers_db.find_existing_analysis(arxiv_id=arxiv_id)
@@ -318,9 +304,8 @@ async def arxiv_import(
         analysis_id = existing["analysis_id"]
         analysis_status = existing["status"]
         await papers_db.increment_request_count(analysis_id)
-        await papers_db.create_user_paper(
-            paper_id, analysis_id, user_id=user_id, trial_id=x_trial_id,
-        )
+        await papers_db.create_user_paper(paper_id, analysis_id, user_id=user_id)
+        await papers_db.consume_credit_for_paper(paper_id, user_id)
         if analysis_status == "failed":
             await papers_db.update_analysis(
                 analysis_id=analysis_id, status="processing", error_message=None,
@@ -335,9 +320,8 @@ async def arxiv_import(
     # never needs to handle the PDF bytes for arXiv imports.
     analysis_id = str(uuid.uuid4())
     await papers_db.create_analysis(analysis_id, arxiv_id=arxiv_id)
-    await papers_db.create_user_paper(
-        paper_id, analysis_id, user_id=user_id, trial_id=x_trial_id,
-    )
+    await papers_db.create_user_paper(paper_id, analysis_id, user_id=user_id)
+    await papers_db.consume_credit_for_paper(paper_id, user_id)
 
     background_tasks.add_task(llm_service.trigger_arxiv_pipeline, analysis_id, paper_id, arxiv_id)
     logger.info("arXiv import queued for %s → paper_id=%s", arxiv_id, paper_id)

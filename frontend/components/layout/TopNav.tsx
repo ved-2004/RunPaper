@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, Moon, Sun } from "lucide-react";
+import { Bell, Moon, Sun, Coins } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
@@ -9,7 +9,8 @@ import {
   Breadcrumb, BreadcrumbItem, BreadcrumbLink,
   BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
 
 const routeNames: Record<string, string> = {
   "/dashboard": "My Papers",
@@ -20,6 +21,8 @@ const routeNames: Record<string, string> = {
 export function TopNav() {
   const { theme, setTheme } = useTheme();
   const pathname = usePathname();
+  const router = useRouter();
+  const { user } = useAuth();
   const currentRoute =
     routeNames[pathname] ||
     (pathname.startsWith("/papers/") ? "Paper Results" : "Dashboard");
@@ -44,6 +47,19 @@ export function TopNav() {
       </Breadcrumb>
 
       <div className="flex-1" />
+
+      {/* Credits chip — only shown for signed-in users */}
+      {user && (
+        <button
+          onClick={() => router.push("/feedback")}
+          title="Click to get more credits"
+          className="flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+        >
+          <Coins className="h-3.5 w-3.5 text-primary" />
+          <span>{user.credits ?? 0}</span>
+          <span className="text-muted-foreground hidden sm:inline">credits</span>
+        </button>
+      )}
 
       <Button
         variant="ghost"

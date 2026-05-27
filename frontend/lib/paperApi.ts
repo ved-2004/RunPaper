@@ -1,14 +1,13 @@
 import { API_BASE_URL } from "./config";
-import { getOrCreateTrialId } from "./trial";
 import type { PaperRecord, PaperSummary } from "@/types/paper";
 
 // ── Typed errors ──────────────────────────────────────────────────────────────
 
-/** Thrown when the anonymous free trial has been used up. */
-export class TrialExhaustedError extends Error {
+/** Thrown when the user has 0 credits remaining. */
+export class InsufficientCreditsError extends Error {
   constructor() {
-    super("trial_exhausted");
-    this.name = "TrialExhaustedError";
+    super("insufficient_credits");
+    this.name = "InsufficientCreditsError";
   }
 }
 
@@ -19,16 +18,6 @@ export class RateLimitError extends Error {
     super("rate_limited");
     this.name = "RateLimitError";
     this.retryAfter = retryAfter;
-  }
-}
-
-/** Thrown when a signed-in user has reached their paper limit. */
-export class PaperLimitError extends Error {
-  limit: number;
-  constructor(limit = 5) {
-    super("paper_limit_reached");
-    this.name = "PaperLimitError";
-    this.limit = limit;
   }
 }
 
@@ -43,18 +32,15 @@ export async function uploadAndAnalyze(file: File): Promise<{ paper_id: string }
   const form = new FormData();
   form.append("file", file);
 
-  const trialId = getOrCreateTrialId();
-
   const res = await fetch(`${API_BASE_URL}/api/papers/upload-and-analyze`, {
     method: "POST",
-    headers: { "X-Trial-ID": trialId, ..._authHeaders() },
+    headers: { ..._authHeaders() },
     body: form,
   });
 
   if (res.status === 403) {
     const body = await res.json().catch(() => ({}));
-    if (body?.code === "trial_exhausted") throw new TrialExhaustedError();
-    if (body?.code === "paper_limit_reached") throw new PaperLimitError(body.limit ?? 5);
+    if (body?.code === "insufficient_credits") throw new InsufficientCreditsError();
   }
 
   if (res.status === 429) {
@@ -72,13 +58,10 @@ export async function uploadAndAnalyze(file: File): Promise<{ paper_id: string }
 export async function importFromArxiv(
   arxivUrl: string,
 ): Promise<{ paper_id: string; arxiv_id: string }> {
-  const trialId = getOrCreateTrialId();
-
   const res = await fetch(`${API_BASE_URL}/api/papers/arxiv-import`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Trial-ID": trialId,
       ..._authHeaders(),
     },
     body: JSON.stringify({ arxiv_url: arxivUrl }),
@@ -86,8 +69,7 @@ export async function importFromArxiv(
 
   if (res.status === 403) {
     const body = await res.json().catch(() => ({}));
-    if (body?.code === "trial_exhausted") throw new TrialExhaustedError();
-    if (body?.code === "paper_limit_reached") throw new PaperLimitError(body.limit ?? 5);
+    if (body?.code === "insufficient_credits") throw new InsufficientCreditsError();
   }
 
   if (!res.ok) {
@@ -98,7 +80,9 @@ export async function importFromArxiv(
 }
 
 export async function getPaper(paperId: string): Promise<PaperRecord> {
-  const res = await fetch(`${API_BASE_URL}/api/papers/${paperId}`);
+  const res = await fetch(`${API_BASE_URL}/api/papers/${paperId}`, {
+    headers: _authHeaders(),
+  });
   if (!res.ok) throw new Error("Failed to fetch paper");
   return res.json();
 }
@@ -139,26 +123,26 @@ export async function deletePaper(paperId: string): Promise<void> {
   if (!res.ok) throw new Error("Failed to delete paper");
 }
 
-/**
- * After sign-in, call this to move any anonymous trial papers into the
- * user's account.  Silently no-ops if the user had no trial papers.
- */
-export async function migrateTrialPapers(trialId: string): Promise<number> {
-  const token = localStorage.getItem("access_token");
-  if (!token || !trialId) return 0;
-  try {
-    const res = await fetch(`${API_BASE_URL}/auth/migrate-trial`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ trial_id: trialId }),
-    });
-    if (!res.ok) return 0;
-    const data = await res.json();
-    return data.migrated ?? 0;
-  } catch {
-    return 0;
+export interface FeedbackPayload {
+  name: string;
+  role: string;
+  organization: string;
+  why_credits: string;
+  improvements: string;
+}
+
+export async function submitFeedback(payload: FeedbackPayload): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`${API_BASE_URL}/api/feedback`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ..._authHeaders(),
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.detail || "Failed to submit feedback");
   }
+  return res.json();
 }

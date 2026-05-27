@@ -44,7 +44,7 @@ export default function AppLayout({ children, requiresAuth = true }: AppLayoutPr
     <ExplainProvider>
       <SidebarProvider defaultOpen={false}>
         <div className="min-h-screen flex w-full">
-          <AppSidebar isTrial={!user} />
+          <AppSidebar />
           <div className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
             <TopNav />
             <main className="flex-1 overflow-auto">{children}</main>

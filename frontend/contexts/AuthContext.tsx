@@ -9,6 +9,7 @@ export interface AuthUser {
   name: string;
   google_id: string;
   avatar_url: string | null;
+  credits: number;
 }
 
 interface AuthContextValue {
@@ -16,6 +17,7 @@ interface AuthContextValue {
   isLoading: boolean;
   logout: () => Promise<void>;
   refetch: () => Promise<void>;
+  refreshCredits: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -23,6 +25,7 @@ const AuthContext = createContext<AuthContextValue>({
   isLoading: true,
   logout: async () => {},
   refetch: async () => {},
+  refreshCredits: async () => {},
 });
 
 export function authHeaders(): Record<string, string> {
@@ -68,8 +71,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
+  // Re-fetch just the user's credit balance without a full re-auth round-trip
+  const refreshCredits = useCallback(async () => {
+    await fetchMe();
+  }, [fetchMe]);
+
   return (
-    <AuthContext.Provider value={{ user, isLoading, logout, refetch: fetchMe }}>
+    <AuthContext.Provider value={{ user, isLoading, logout, refetch: fetchMe, refreshCredits }}>
       {children}
     </AuthContext.Provider>
   );

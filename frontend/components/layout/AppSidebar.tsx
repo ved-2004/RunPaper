@@ -1,6 +1,6 @@
 "use client";
 
-import { Settings, Upload, FileText, Cpu, LogIn, LogOut } from "lucide-react";
+import { Settings, Upload, FileText, Cpu, LogOut, MessageSquarePlus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { usePathname } from "next/navigation";
@@ -19,6 +19,7 @@ const papersNav = [
 
 const systemNav = [
   { title: "Settings", url: "/settings", icon: Settings },
+  { title: "Get More Credits", url: "/feedback", icon: MessageSquarePlus },
 ];
 
 function NavItem({ url, title, icon: Icon }: { url: string; title: string; icon: React.ElementType }) {
@@ -43,12 +44,7 @@ function NavItem({ url, title, icon: Icon }: { url: string; title: string; icon:
   );
 }
 
-interface AppSidebarProps {
-  /** True when the user is not signed in (trial / anonymous mode). */
-  isTrial?: boolean;
-}
-
-export function AppSidebar({ isTrial = false }: AppSidebarProps) {
+export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const { user, logout } = useAuth();
@@ -76,55 +72,27 @@ export function AppSidebar({ isTrial = false }: AppSidebarProps) {
       </SidebarHeader>
 
       <SidebarContent>
-        {isTrial ? (
-          /* Trial mode — only show Upload */
-          <SidebarGroup>
-            <SidebarGroupLabel>Try it free</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                <NavItem url="/upload" title="Upload Paper" icon={Upload} />
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        ) : (
-          /* Signed-in — full nav */
-          <>
-            <SidebarGroup>
-              <SidebarGroupLabel>Papers</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {papersNav.map((item) => <NavItem key={item.url} {...item} />)}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupLabel>Papers</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {papersNav.map((item) => <NavItem key={item.url} {...item} />)}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
 
-            <SidebarGroup>
-              <SidebarGroupLabel>System</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {systemNav.map((item) => <NavItem key={item.url} {...item} />)}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          </>
-        )}
+        <SidebarGroup>
+          <SidebarGroupLabel>System</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {systemNav.map((item) => <NavItem key={item.url} {...item} />)}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </SidebarContent>
 
       <SidebarFooter className="p-3">
-        {isTrial ? (
-          /* Trial — Sign in CTA */
-          <Link
-            href="/"
-            className={cn(
-              "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium",
-              "bg-primary/10 text-primary hover:bg-primary/20 transition-colors",
-              collapsed && "justify-center px-0",
-            )}
-          >
-            <LogIn className="h-4 w-4 shrink-0" />
-            {!collapsed && <span>Sign in for more</span>}
-          </Link>
-        ) : user ? (
+        {user ? (
           /* Signed-in — user chip + logout */
           <div className={cn(
             "flex items-center gap-2 rounded-lg px-2 py-2",

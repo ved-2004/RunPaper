@@ -36,15 +36,22 @@ logger = logging.getLogger(__name__)
 
 _TABLE = "users"
 
+# Module-level singleton — created once per worker process, reused on every call.
+_sb_client = None
+
 
 def _client():
+    global _sb_client
+    if _sb_client is not None:
+        return _sb_client
     url = os.environ.get("SUPABASE_URL", "")
     key = os.environ.get("SUPABASE_SERVICE_KEY", "")
     if not (url and key):
         return None
     try:
         from supabase import create_client
-        return create_client(url, key)
+        _sb_client = create_client(url, key)
+        return _sb_client
     except Exception as exc:
         logger.warning("Supabase client init failed: %s", exc)
         return None
@@ -101,4 +108,65 @@ def get_user_by_id(user_id: str) -> Optional[dict]:
         return resp.data
     except Exception as exc:
         logger.error("get_user_by_id failed for id=%s: %s", user_id, exc)
+        return None
+
+
+def get_credits(user_id: str) -> int:
+    """
+    Return the current credit balance for a user.
+    Falls back to the in-memory user cache on any DB failure (e.g. migration
+    not yet applied) so the credit gate never incorrectly blocks a new user.
+    """
+    sb = _client()
+    if sb is None:
+        return _credits_from_cache(user_id)
+    try:
+        resp = (
+            sb.table(_TABLE)
+            .select("credits")
+            .eq("id", user_id)
+            .single()
+            .execute()
+        )
+        return (resp.data or {}).get("credits", 0)
+    except Exception as exc:
+        logger.error("get_credits failed for user_id=%s: %s", user_id, exc)
+        return _credits_from_cache(user_id)
+
+
+def _credits_from_cache(user_id: str) -> int:
+    """Read credits from the in-memory user cache. Returns 5 for unknown users (new-account default)."""
+    from api.models.user import get_user_by_id
+    cached = get_user_by_id(user_id)
+    return cached.credits if cached is not None else 5
+
+
+def deduct_credit(user_id: str) -> Optional[int]:
+    """
+    Atomically decrement credits by 1 for a user (only if credits > 0).
+    Returns the new credit balance, or None if the update failed / user had 0 credits.
+    Uses a conditional UPDATE to prevent negative balances.
+    """
+    sb = _client()
+    if sb is None:
+        return None
+    try:
+        # Fetch current balance first
+        current = get_credits(user_id)
+        if current <= 0:
+            return None
+        resp = (
+            sb.table(_TABLE)
+            .update({"credits": current - 1})
+            .eq("id", user_id)
+            .eq("credits", current)   # optimistic lock — retry handled by caller if needed
+            .execute()
+        )
+        rows = resp.data or []
+        if not rows:
+            # Race condition — another request deducted first; re-fetch
+            return get_credits(user_id)
+        return rows[0].get("credits", current - 1)
+    except Exception as exc:
+        logger.error("deduct_credit failed for user_id=%s: %s", user_id, exc)
         return None

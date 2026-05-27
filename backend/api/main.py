@@ -105,6 +105,10 @@ app.include_router(papers_router.router)
 from api.routers import chat as chat_router
 app.include_router(chat_router.router)
 
+# Feedback — user feedback + more-credits requests
+from api.routers import feedback as feedback_router
+app.include_router(feedback_router.router)
+
 _CORS_ORIGINS = [
     # Local dev
     "http://localhost:3000",

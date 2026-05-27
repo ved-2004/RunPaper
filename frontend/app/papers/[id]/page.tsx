@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getPaper, getPdfUrl, downloadZip } from "@/lib/paperApi";
 import type { PaperSummary } from "@/types/paper";
 import AppLayout from "@/components/layout/AppLayout";
+import { useAuth } from "@/contexts/AuthContext";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -77,6 +78,7 @@ export default function PaperPage() {
   const defaultTab = searchParams.get("tab") ?? "learn";
   const [downloading, setDownloading] = useState(false);
   const queryClient = useQueryClient();
+  const { refreshCredits } = useAuth();
 
   const handleDownload = async () => {
     setDownloading(true);
@@ -107,6 +109,13 @@ export default function PaperPage() {
       query.state.data?.status === "processing" ? 3000 : false,
     enabled: !!id,
   });
+
+  // Refresh the credit count in TopNav once on mount — the backend already
+  // deducted the credit at submission time, so we just need to sync the UI.
+  useEffect(() => {
+    refreshCredits();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (isLoading) {
     return (

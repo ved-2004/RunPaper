@@ -14,6 +14,7 @@ class User(BaseModel):
     name: str
     avatar_url: Optional[str] = None
     phone_number: Optional[str] = None  # Not returned by Google basic profile; updatable later
+    credits: int = 5                     # Remaining analysis credits (default 5 for new users)
     created_at: Optional[datetime] = None
     last_login_at: Optional[datetime] = None
 
@@ -38,6 +39,7 @@ def _row_to_user(row: dict) -> User:
         name=row["name"],
         avatar_url=row.get("avatar_url"),
         phone_number=row.get("phone_number"),
+        credits=row.get("credits", 5),
         created_at=datetime.fromisoformat(row["created_at"]) if row.get("created_at") else None,
         last_login_at=datetime.fromisoformat(row["last_login_at"]) if row.get("last_login_at") else None,
     )

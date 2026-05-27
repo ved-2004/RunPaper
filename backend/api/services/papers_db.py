@@ -26,15 +26,22 @@ logger = logging.getLogger(__name__)
 _analyses: dict[str, dict] = {}    # analysis_id → paper_analyses row
 _user_papers: dict[str, dict] = {} # paper_id    → user_papers row
 
+# Module-level singleton — created once per worker process, reused on every call.
+_sb_client = None
+
 
 def _client():
+    global _sb_client
+    if _sb_client is not None:
+        return _sb_client
     url = os.environ.get("SUPABASE_URL", "")
     key = os.environ.get("SUPABASE_SERVICE_KEY", "")
     if not (url and key):
         return None
     try:
         from supabase import create_client
-        return create_client(url, key)
+        _sb_client = create_client(url, key)
+        return _sb_client
     except Exception as exc:
         logger.warning("Supabase client init failed: %s", exc)
         return None
@@ -64,10 +71,10 @@ def _flatten(up_row: dict, analysis: dict) -> dict:
     return {
         "paper_id":            up_row.get("paper_id", ""),
         "user_id":             up_row.get("user_id"),
-        "trial_id":            up_row.get("trial_id"),
         "analysis_id":         up_row.get("analysis_id"),
         "uploaded_at":         up_row.get("added_at", ""),
         "deleted_at":          up_row.get("deleted_at"),
+        "credit_consumed":     up_row.get("credit_consumed", False),
         # from paper_analyses
         "arxiv_id":            analysis.get("arxiv_id"),
         "title":               analysis.get("title"),
@@ -238,9 +245,8 @@ async def create_user_paper(
     paper_id: str,
     analysis_id: str,
     user_id: Optional[str] = None,
-    trial_id: Optional[str] = None,
 ) -> bool:
-    """Insert a user_papers row linking a user/trial to an analysis."""
+    """Insert a user_papers row linking a user to an analysis."""
     row: dict[str, Any] = {
         "paper_id":    paper_id,
         "analysis_id": analysis_id,
@@ -248,8 +254,6 @@ async def create_user_paper(
     }
     if user_id:
         row["user_id"] = user_id
-    if trial_id:
-        row["trial_id"] = trial_id
 
     sb = _client()
     if sb is None:
@@ -397,6 +401,53 @@ async def soft_delete_paper(paper_id: str) -> bool:
         return True
     except Exception as exc:
         logger.error("soft_delete_paper failed for %s: %s", paper_id, exc)
+        return False
+
+
+async def consume_credit_for_paper(paper_id: str, user_id: str) -> bool:
+    """
+    Mark credit_consumed=True on user_papers and deduct 1 credit from the user.
+    Called eagerly at submission time (POST endpoints) so credit is deducted
+    the moment the user commits to the analysis — whether the pipeline runs
+    fresh or is skipped because a cached result already exists.
+
+    Idempotent: fetches current state first; skips deduction if already consumed.
+    Returns True when a credit was successfully consumed.
+    """
+    sb = _client()
+    if sb is None:
+        up = _user_papers.get(paper_id)
+        if up and not up.get("credit_consumed"):
+            up["credit_consumed"] = True
+            from api.services import users_db
+            users_db.deduct_credit(user_id)
+            return True
+        return False
+
+    try:
+        # Fetch current state — prevents double-deduction on retries
+        check = (
+            sb.table("user_papers")
+            .select("credit_consumed")
+            .eq("paper_id", paper_id)
+            .eq("user_id", user_id)
+            .single()
+            .execute()
+        )
+        if not check.data or check.data.get("credit_consumed"):
+            logger.info("Credit already consumed for paper %s / user %s — skipping", paper_id, user_id)
+            return False
+
+        # Mark consumed (fire-and-forget; we don't rely on the return value)
+        sb.table("user_papers").update({"credit_consumed": True}).eq("paper_id", paper_id).eq("user_id", user_id).execute()
+
+        # Deduct from the user's balance
+        from api.services import users_db
+        new_balance = users_db.deduct_credit(user_id)
+        logger.info("Credit consumed for paper %s / user %s — new balance: %s", paper_id, user_id, new_balance)
+        return True
+    except Exception as exc:
+        logger.error("consume_credit_for_paper failed for %s/%s: %s", paper_id, user_id, exc)
         return False
 
 

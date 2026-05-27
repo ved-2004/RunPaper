@@ -55,11 +55,13 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-base font-semibold mb-3">3. Free trial</h2>
+            <h2 className="text-base font-semibold mb-3">3. Credits</h2>
             <p>
-              Unregistered users may process one paper for free. After the free trial, a Google
-              account is required to continue using the Service. We reserve the right to modify or
-              discontinue the free trial at any time.
+              New accounts receive 5 complimentary credits upon sign-up. Each credit allows one
+              full paper analysis. Credits are non-transferable and have no monetary value.
+              Additional credits may be requested via the feedback form; we review requests and
+              grant credits at our sole discretion. We reserve the right to modify the credit
+              system at any time.
             </p>
           </section>
 
@@ -71,7 +73,7 @@ export default function TermsPage() {
               <li>Upload documents containing personal data of others without their consent.</li>
               <li>Attempt to reverse-engineer, scrape, or circumvent any security measures.</li>
               <li>Use the Service for any unlawful purpose.</li>
-              <li>Abuse the free trial (e.g., creating multiple accounts to bypass limits).</li>
+              <li>Create multiple accounts to circumvent the credit system.</li>
               <li>Upload documents exceeding 50 MB or that are not PDF files.</li>
             </ul>
           </section>

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { GoogleSignInButton } from "@/components/auth/GoogleSignInButton";
 import {
   Cpu, ArrowRight, Upload, Workflow, Code2, GitCompare,
-  MessageSquare, FileText, Zap, CheckCircle2, ChevronRight,
+  MessageSquare, FileText, Zap, CheckCircle2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -71,14 +71,7 @@ export default function LandingPage() {
                 </Link>
               </Button>
             ) : (
-              <>
-                <Button asChild size="sm" variant="ghost">
-                  <Link href="/">Sign in</Link>
-                </Button>
-                <Button asChild size="sm">
-                  <Link href="/upload">Try free</Link>
-                </Button>
-              </>
+              <GoogleSignInButton />
             )}
           </div>
         </div>
@@ -113,24 +106,23 @@ export default function LandingPage() {
             </Button>
           ) : (
             <>
-              <Button asChild size="lg" className="gap-2 text-base px-6">
-                <Link href="/upload">
-                  <Upload className="h-4 w-4" />
-                  Try free — no account needed
+              <GoogleSignInButton className="py-3 px-5 text-base" />
+              <Button asChild size="lg" variant="outline" className="gap-2 text-base px-6">
+                <Link href="#how-it-works">
+                  See how it works
                 </Link>
               </Button>
-              <GoogleSignInButton />
             </>
           )}
         </div>
 
         <p className="text-xs text-muted-foreground mt-4">
-          One free paper upload · No credit card · 60 second setup
+          5 free credits on sign-up · No credit card · 60 second setup
         </p>
       </section>
 
       {/* ── How it works ── */}
-      <section className="border-t border-border bg-secondary/20 py-14 px-6">
+      <section id="how-it-works" className="border-t border-border bg-secondary/20 py-14 px-6">
         <div className="max-w-3xl mx-auto">
           <h2 className="text-xl font-bold tracking-tight text-center mb-2">How it works</h2>
           <p className="text-sm text-muted-foreground text-center mb-10">
@@ -234,22 +226,22 @@ export default function LandingPage() {
       <section className="py-16 px-6 text-center">
         <div className="max-w-lg mx-auto">
           <h2 className="text-2xl font-bold tracking-tight mb-3">
-            Start with one paper — free
+            Ready to run your first paper?
           </h2>
           <p className="text-sm text-muted-foreground mb-6">
-            No account needed for your first upload. Sign in when you're ready for unlimited access.
+            Sign in with Google and get 5 credits instantly — no credit card, no waitlist.
+            Each credit unlocks a full paper analysis.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-            <Button asChild size="lg" className="gap-2">
-              <Link href="/upload">
-                <Upload className="h-4 w-4" /> Upload a paper
-              </Link>
-            </Button>
-            <Button asChild size="lg" variant="outline" className="gap-2">
-              <Link href="/">
-                Sign in with Google <ChevronRight className="h-4 w-4" />
-              </Link>
-            </Button>
+            {user ? (
+              <Button asChild size="lg" className="gap-2">
+                <Link href="/upload">
+                  <Upload className="h-4 w-4" /> Upload a paper
+                </Link>
+              </Button>
+            ) : (
+              <GoogleSignInButton className="py-3 px-5 text-base" />
+            )}
           </div>
         </div>
       </section>

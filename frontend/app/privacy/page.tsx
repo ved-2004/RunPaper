@@ -62,11 +62,6 @@ export default function PrivacyPage() {
                 account.
               </li>
               <li>
-                <strong>Anonymous trial ID.</strong> Users who have not signed in are assigned a
-                random UUID stored in their browser's <code>localStorage</code>. This is used to
-                enforce the one-paper free trial limit. No personal information is linked to this ID.
-              </li>
-              <li>
                 <strong>Chat messages.</strong> Questions you ask in the Chat tab are sent to our
                 LLM provider for answering. We store the Q&amp;A pairs in our database so the chat
                 history persists during your session; they are deleted when the associated paper is
@@ -120,7 +115,7 @@ export default function PrivacyPage() {
             <ul className="list-disc pl-5 space-y-2">
               <li>To generate code scaffolds, reproducibility checklists, and architecture diagrams for papers you submit.</li>
               <li>To authenticate you and associate papers with your account.</li>
-              <li>To enforce the free trial limit for anonymous users.</li>
+              <li>To manage your credit balance and process feedback requests.</li>
               <li>To debug errors and detect abuse.</li>
             </ul>
             <p className="mt-2">
