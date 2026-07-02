@@ -170,3 +170,29 @@ def deduct_credit(user_id: str) -> Optional[int]:
     except Exception as exc:
         logger.error("deduct_credit failed for user_id=%s: %s", user_id, exc)
         return None
+
+
+def refund_credit(user_id: str) -> Optional[int]:
+    """
+    Increment credits by 1 for a user. Used when a charged analysis ultimately
+    fails and is cleaned up before producing usable results.
+    """
+    sb = _client()
+    if sb is None:
+        return None
+    try:
+        current = get_credits(user_id)
+        resp = (
+            sb.table(_TABLE)
+            .update({"credits": current + 1})
+            .eq("id", user_id)
+            .eq("credits", current)
+            .execute()
+        )
+        rows = resp.data or []
+        if not rows:
+            return get_credits(user_id)
+        return rows[0].get("credits", current + 1)
+    except Exception as exc:
+        logger.error("refund_credit failed for user_id=%s: %s", user_id, exc)
+        return None

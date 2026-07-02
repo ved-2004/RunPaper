@@ -17,7 +17,7 @@ import json
 import logging
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -64,6 +64,40 @@ def compute_content_hash(pdf_bytes: bytes) -> str:
     return hashlib.sha256(pdf_bytes).hexdigest()
 
 
+def _missing_core_artifacts(analysis: dict) -> list[str]:
+    """Return core artifacts that must exist before a cached analysis is reused."""
+    missing: list[str] = []
+
+    scaffold = analysis.get("code_scaffold_json")
+    required_code = ("model_py", "train_py", "config_yaml", "requirements_txt")
+    if not isinstance(scaffold, dict) or not all(str(scaffold.get(k) or "").strip() for k in required_code):
+        missing.append("code_scaffold_json")
+
+    flowchart = analysis.get("flowchart_json")
+    nodes = flowchart.get("nodes") if isinstance(flowchart, dict) else None
+    if not isinstance(nodes, list) or len(nodes) == 0:
+        missing.append("flowchart_json")
+
+    return missing
+
+
+def _analysis_lookup_result(row: dict) -> dict:
+    missing = _missing_core_artifacts(row) if row.get("status") == "complete" else []
+    return {
+        "analysis_id": row["analysis_id"],
+        "status": row.get("status", "processing"),
+        "is_reusable": row.get("status") == "complete" and not missing,
+        "missing_artifacts": missing,
+    }
+
+
+def _public_status(analysis: dict) -> str:
+    status = analysis.get("status", "processing")
+    if status == "complete" and _missing_core_artifacts(analysis):
+        return "partial"
+    return status
+
+
 # ── paper_analyses helpers ────────────────────────────────────────────────────
 
 def _flatten(up_row: dict, analysis: dict) -> dict:
@@ -79,11 +113,14 @@ def _flatten(up_row: dict, analysis: dict) -> dict:
         "arxiv_id":            analysis.get("arxiv_id"),
         "title":               analysis.get("title"),
         "authors_json":        analysis.get("authors_json"),
-        "status":              analysis.get("status", "processing"),
+        "status":              _public_status(analysis),
         "extraction_json":     analysis.get("extraction_json"),
         "code_scaffold_json":  analysis.get("code_scaffold_json"),
         "reproducibility_json": analysis.get("reproducibility_json"),
         "flowchart_json":      analysis.get("flowchart_json"),
+        "notebook_json":       analysis.get("notebook_json"),
+        "sanity_status":       analysis.get("sanity_status"),
+        "sanity_details_json": analysis.get("sanity_details_json"),
         "faq_json":            analysis.get("faq_json"),
         "error_message":       analysis.get("error_message"),
     }
@@ -97,7 +134,7 @@ async def find_existing_analysis(
 ) -> Optional[dict]:
     """
     Look up an existing analysis by arXiv ID or SHA-256 content hash.
-    Returns {"analysis_id": str, "status": str} or None.
+    Returns analysis status plus cache health metadata, or None.
     """
     if not arxiv_id and not content_hash:
         return None
@@ -106,20 +143,22 @@ async def find_existing_analysis(
     if sb is None:
         for row in _analyses.values():
             if arxiv_id and row.get("arxiv_id") == arxiv_id:
-                return {"analysis_id": row["analysis_id"], "status": row["status"]}
+                return _analysis_lookup_result(row)
             if content_hash and row.get("content_hash") == content_hash:
-                return {"analysis_id": row["analysis_id"], "status": row["status"]}
+                return _analysis_lookup_result(row)
         return None
 
     try:
-        query = sb.table("paper_analyses").select("analysis_id, status")
+        query = sb.table("paper_analyses").select(
+            "analysis_id, status, code_scaffold_json, flowchart_json"
+        )
         if arxiv_id:
             resp = query.eq("arxiv_id", arxiv_id).execute()
         else:
             resp = query.eq("content_hash", content_hash).execute()
         if resp.data:
             row = resp.data[0]
-            return {"analysis_id": row["analysis_id"], "status": row["status"]}
+            return _analysis_lookup_result(row)
         return None
     except Exception as exc:
         logger.error("find_existing_analysis failed: %s", exc)
@@ -173,6 +212,10 @@ async def update_analysis(
 ) -> bool:
     """Update a paper_analyses row (pipeline results or error state)."""
     updates: dict[str, Any] = {"status": status}
+    if status == "failed":
+        updates["failed_at"] = _now_iso()
+    elif status == "processing":
+        updates["failed_at"] = None
     if title is not None:
         updates["title"] = title
     if arxiv_id is not None:
@@ -206,6 +249,18 @@ async def update_analysis(
         sb.table("paper_analyses").update(updates).eq("analysis_id", analysis_id).execute()
         return True
     except Exception as exc:
+        if "failed_at" in updates:
+            retry_updates = dict(updates)
+            retry_updates.pop("failed_at", None)
+            try:
+                sb.table("paper_analyses").update(retry_updates).eq("analysis_id", analysis_id).execute()
+                logger.warning(
+                    "update_analysis retried without failed_at for %s; run migration 011",
+                    analysis_id,
+                )
+                return True
+            except Exception:
+                pass
         logger.error("update_analysis failed for %s: %s", analysis_id, exc)
         existing = _analyses.get(analysis_id, {})
         existing.update(updates)
@@ -239,6 +294,49 @@ async def increment_request_count(analysis_id: str) -> None:
         logger.warning("increment_request_count failed: %s", exc)
 
 
+async def reset_analysis_for_rerun(analysis_id: str) -> bool:
+    """Reset generated artifacts so a stale shared analysis can run again cleanly."""
+    updates: dict[str, Any] = {
+        "status": "processing",
+        "error_message": None,
+        "code_scaffold_json": None,
+        "reproducibility_json": None,
+        "flowchart_json": None,
+        "notebook_json": None,
+        "sanity_status": "pending",
+        "sanity_details_json": None,
+        "failed_at": None,
+    }
+
+    sb = _client()
+    if sb is None:
+        existing = _analyses.get(analysis_id, {})
+        existing.update(updates)
+        _analyses[analysis_id] = existing
+        return True
+
+    try:
+        sb.table("paper_analyses").update(updates).eq("analysis_id", analysis_id).execute()
+        return True
+    except Exception as exc:
+        retry_updates = dict(updates)
+        retry_updates.pop("failed_at", None)
+        try:
+            sb.table("paper_analyses").update(retry_updates).eq("analysis_id", analysis_id).execute()
+            logger.warning(
+                "reset_analysis_for_rerun retried without failed_at for %s; run migration 011",
+                analysis_id,
+            )
+            return True
+        except Exception:
+            pass
+        logger.error("reset_analysis_for_rerun failed for %s: %s", analysis_id, exc)
+        existing = _analyses.get(analysis_id, {})
+        existing.update(updates)
+        _analyses[analysis_id] = existing
+        return False
+
+
 # ── user_papers (per-user ownership) ─────────────────────────────────────────
 
 async def create_user_paper(
@@ -268,6 +366,113 @@ async def create_user_paper(
         logger.error("create_user_paper failed for %s: %s", paper_id, exc)
         _user_papers[paper_id] = row
         return False
+
+
+async def cleanup_failed_user_papers(grace_minutes: int = 10) -> int:
+    """
+    Soft-delete active user paper links whose shared analysis has stayed failed
+    past the grace window. Charged links are refunded once before deletion.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=grace_minutes)
+    now = _now_iso()
+
+    sb = _client()
+    if sb is None:
+        failed_ids = {
+            analysis_id
+            for analysis_id, row in _analyses.items()
+            if row.get("status") == "failed"
+            and _parse_iso(row.get("failed_at")) is not None
+            and _parse_iso(row.get("failed_at")) <= cutoff
+        }
+        cleaned = 0
+        for row in _user_papers.values():
+            if row.get("analysis_id") in failed_ids and not row.get("deleted_at"):
+                row["deleted_at"] = now
+                row["credit_consumed"] = False
+                cleaned += 1
+        return cleaned
+
+    try:
+        failed_resp = (
+            sb.table("paper_analyses")
+            .select("analysis_id")
+            .eq("status", "failed")
+            .lte("failed_at", cutoff.isoformat())
+            .execute()
+        )
+        analysis_ids = [row["analysis_id"] for row in (failed_resp.data or []) if row.get("analysis_id")]
+        if not analysis_ids:
+            return 0
+
+        links_resp = (
+            sb.table("user_papers")
+            .select("paper_id, user_id, credit_consumed")
+            .in_("analysis_id", analysis_ids)
+            .is_("deleted_at", "null")
+            .execute()
+        )
+        links = links_resp.data or []
+
+        from api.services import users_db
+        for link in links:
+            if link.get("credit_consumed") and link.get("user_id"):
+                users_db.refund_credit(link["user_id"])
+
+        update_resp = (
+            sb.table("user_papers")
+            .update({"deleted_at": now, "credit_consumed": False})
+            .in_("analysis_id", analysis_ids)
+            .is_("deleted_at", "null")
+            .execute()
+        )
+        return len(update_resp.data or links)
+    except Exception as exc:
+        logger.error("cleanup_failed_user_papers failed: %s", exc)
+        return 0
+
+
+def _parse_iso(value: Any) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+async def find_user_paper_by_analysis(user_id: str, analysis_id: str) -> Optional[dict]:
+    """Return the user's active paper link for an analysis, if one already exists."""
+    sb = _client()
+    if sb is None:
+        matches = [
+            row for row in _user_papers.values()
+            if row.get("user_id") == user_id
+            and row.get("analysis_id") == analysis_id
+            and not row.get("deleted_at")
+        ]
+        if not matches:
+            return None
+        latest = sorted(matches, key=lambda r: r.get("added_at", ""), reverse=True)[0]
+        return {"paper_id": latest.get("paper_id"), "analysis_id": analysis_id}
+
+    try:
+        resp = (
+            sb.table("user_papers")
+            .select("paper_id, analysis_id, added_at")
+            .eq("user_id", user_id)
+            .eq("analysis_id", analysis_id)
+            .is_("deleted_at", "null")
+            .order("added_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if resp.data:
+            return dict(resp.data[0])
+        return None
+    except Exception as exc:
+        logger.error("find_user_paper_by_analysis failed for %s/%s: %s", user_id, analysis_id, exc)
+        return None
 
 
 async def get_paper(paper_id: str) -> Optional[dict]:
@@ -305,6 +510,23 @@ async def get_paper(paper_id: str) -> Optional[dict]:
         return None
 
 
+def _dedupe_user_paper_rows(rows: list[dict]) -> list[dict]:
+    """Collapse repeated active user_papers links to the same analysis."""
+    by_analysis: dict[str, dict] = {}
+    without_analysis: list[dict] = []
+    for row in rows:
+        analysis_id = row.get("analysis_id")
+        if not analysis_id:
+            without_analysis.append(row)
+            continue
+        existing = by_analysis.get(analysis_id)
+        if existing is None or row.get("uploaded_at", "") > existing.get("uploaded_at", ""):
+            by_analysis[analysis_id] = row
+
+    deduped = list(by_analysis.values()) + without_analysis
+    return sorted(deduped, key=lambda r: r.get("uploaded_at", ""), reverse=True)
+
+
 async def list_user_papers(user_id: Optional[str] = None) -> list[dict]:
     """List non-deleted papers (summary columns only). Most recent first."""
     sb = _client()
@@ -317,12 +539,16 @@ async def list_user_papers(user_id: Optional[str] = None) -> list[dict]:
                 continue
             analysis = _analyses.get(up.get("analysis_id", ""), {})
             results.append(_flatten(up, analysis))
-        return sorted(results, key=lambda r: r.get("uploaded_at", ""), reverse=True)
+        return _dedupe_user_paper_rows(results)
 
     try:
         query = (
             sb.table("user_papers")
-            .select("paper_id, user_id, added_at, paper_analyses(title, authors_json, status, arxiv_id)")
+            .select(
+                "paper_id, user_id, analysis_id, added_at, "
+                "paper_analyses(title, authors_json, status, arxiv_id, "
+                "code_scaffold_json, flowchart_json, sanity_status)"
+            )
             .is_("deleted_at", "null")
         )
         if user_id is not None:
@@ -333,13 +559,15 @@ async def list_user_papers(user_id: Optional[str] = None) -> list[dict]:
             analysis = row.pop("paper_analyses", {}) or {}
             rows.append({
                 "paper_id":    row.get("paper_id", ""),
+                "analysis_id": row.get("analysis_id"),
                 "uploaded_at": row.get("added_at", ""),
                 "title":       analysis.get("title"),
                 "authors_json": analysis.get("authors_json"),
-                "status":      analysis.get("status", "processing"),
+                "status":      _public_status(analysis),
                 "arxiv_id":    analysis.get("arxiv_id"),
+                "sanity_status": analysis.get("sanity_status"),
             })
-        return rows
+        return _dedupe_user_paper_rows(rows)
     except Exception as exc:
         logger.error("list_user_papers failed: %s", exc)
         return []
@@ -349,19 +577,25 @@ async def count_user_papers(user_id: str) -> int:
     """Count non-deleted papers for a signed-in user."""
     sb = _client()
     if sb is None:
-        return sum(
-            1 for up in _user_papers.values()
+        unique_keys = {
+            up.get("analysis_id") or up.get("paper_id")
+            for up in _user_papers.values()
             if up.get("user_id") == user_id and not up.get("deleted_at")
-        )
+        }
+        return len(unique_keys)
     try:
         resp = (
             sb.table("user_papers")
-            .select("paper_id", count="exact")
+            .select("paper_id, analysis_id")
             .eq("user_id", user_id)
             .is_("deleted_at", "null")
             .execute()
         )
-        return resp.count or 0
+        unique_keys = {
+            row.get("analysis_id") or row.get("paper_id")
+            for row in (resp.data or [])
+        }
+        return len(unique_keys)
     except Exception as exc:
         logger.error("count_user_papers failed: %s", exc)
         return 0

@@ -13,9 +13,13 @@ Deduplication:
   - PDF uploads:   SHA-256 of file bytes → paper_analyses.content_hash
   - arXiv imports: arxiv_id             → paper_analyses.arxiv_id
   If an analysis already exists and is 'complete', the pipeline is skipped entirely
-  and the new user_papers row is linked to the existing analysis immediately.
+  only when core artifacts are present, and the new user_papers row is linked to
+  the existing analysis immediately.
+  If the current user already has an active link to that analysis, that paper_id is
+  returned instead of creating a duplicate dashboard row.
   If the analysis is 'processing', the new row is still created and the user polls
-  the same underlying analysis. If 'failed', the analysis is reset and re-run.
+  the same underlying analysis. If 'failed' or artifact-incomplete, the analysis
+  is reset and re-run.
 
 Credits:
   Authenticated users need ≥ 1 credit to submit a paper (checked at submission).
@@ -79,7 +83,7 @@ class PaperRecord(BaseModel):
     title: Optional[str] = None
     authors: Optional[list[str]] = None
     uploaded_at: str
-    status: str
+    status: str  # processing | complete | partial | failed
     extraction: Optional[dict] = None
     code_scaffold: Optional[dict] = None
     reproducibility: Optional[list] = None
@@ -95,7 +99,7 @@ class PaperSummary(BaseModel):
     title: Optional[str] = None
     authors: Optional[list[str]] = None
     uploaded_at: str
-    status: str
+    status: str  # processing | complete | partial | failed
 
 
 def _db_row_to_record(row: dict) -> PaperRecord:
@@ -114,6 +118,12 @@ def _db_row_to_record(row: dict) -> PaperRecord:
         sanity_status=row.get("sanity_status") or "pending",
         sanity_details=row.get("sanity_details_json"),
         error_message=row.get("error_message"),
+    )
+
+
+def _existing_needs_rerun(existing: dict) -> bool:
+    return existing.get("status") == "failed" or (
+        existing.get("status") == "complete" and not existing.get("is_reusable", True)
     )
 
 
@@ -151,6 +161,14 @@ async def mark_stale_papers_failed(stale_after_minutes: int = 15) -> int:
     except Exception as exc:
         logger.error("mark_stale_papers_failed error: %s", exc)
     return marked
+
+
+async def cleanup_failed_paper_entries(grace_minutes: int = 10) -> int:
+    """Hide failed paper cards after a short grace period and refund charged links."""
+    cleaned = await papers_db.cleanup_failed_user_papers(grace_minutes=grace_minutes)
+    if cleaned:
+        logger.info("Cleaned up %d failed paper entries older than %d min", cleaned, grace_minutes)
+    return cleaned
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -201,25 +219,46 @@ async def upload_and_analyze(
     # ── Deduplication by content hash ────────────────────────────────────────
     content_hash = papers_db.compute_content_hash(content)
     existing = await papers_db.find_existing_analysis(content_hash=content_hash)
-    paper_id = papers_db.generate_paper_id()
 
     if existing:
         analysis_id = existing["analysis_id"]
         analysis_status = existing["status"]
+        existing_user_paper = await papers_db.find_user_paper_by_analysis(user_id, analysis_id)
+        is_duplicate_for_user = bool(existing_user_paper)
+        paper_id = (
+            existing_user_paper.get("paper_id")
+            if existing_user_paper
+            else papers_db.generate_paper_id()
+        )
+
         await papers_db.increment_request_count(analysis_id)
-        await papers_db.create_user_paper(paper_id, analysis_id, user_id=user_id)
-        await papers_db.consume_credit_for_paper(paper_id, user_id)
-        if analysis_status == "failed":
-            # Reset and re-run
-            await papers_db.update_analysis(
-                analysis_id=analysis_id, status="processing", error_message=None,
+        if not is_duplicate_for_user:
+            await papers_db.create_user_paper(paper_id, analysis_id, user_id=user_id)
+            await papers_db.consume_credit_for_paper(paper_id, user_id)
+        else:
+            logger.info(
+                "Duplicate upload for user=%s analysis=%s; returning existing paper_id=%s",
+                user_id,
+                analysis_id,
+                paper_id,
             )
+
+        if _existing_needs_rerun(existing):
+            logger.info(
+                "Reprocessing existing analysis %s for paper_id=%s status=%s missing=%s",
+                analysis_id,
+                paper_id,
+                analysis_status,
+                existing.get("missing_artifacts", []),
+            )
+            await papers_db.reset_analysis_for_rerun(analysis_id)
             background_tasks.add_task(llm_service.trigger_pipeline, analysis_id, paper_id, content)
             return {"paper_id": paper_id, "status": "processing"}
         logger.info("Reusing existing analysis %s for paper_id=%s", analysis_id, paper_id)
         return {"paper_id": paper_id, "status": analysis_status}
 
     # ── New analysis ──────────────────────────────────────────────────────────
+    paper_id = papers_db.generate_paper_id()
     analysis_id = str(uuid.uuid4())
     await papers_db.create_analysis(analysis_id, content_hash=content_hash)
     await papers_db.create_user_paper(paper_id, analysis_id, user_id=user_id)
@@ -298,18 +337,39 @@ async def arxiv_import(
 
     # ── Deduplication by arXiv ID ─────────────────────────────────────────────
     existing = await papers_db.find_existing_analysis(arxiv_id=arxiv_id)
-    paper_id = papers_db.generate_paper_id()
 
     if existing:
         analysis_id = existing["analysis_id"]
         analysis_status = existing["status"]
+        existing_user_paper = await papers_db.find_user_paper_by_analysis(user_id, analysis_id)
+        is_duplicate_for_user = bool(existing_user_paper)
+        paper_id = (
+            existing_user_paper.get("paper_id")
+            if existing_user_paper
+            else papers_db.generate_paper_id()
+        )
+
         await papers_db.increment_request_count(analysis_id)
-        await papers_db.create_user_paper(paper_id, analysis_id, user_id=user_id)
-        await papers_db.consume_credit_for_paper(paper_id, user_id)
-        if analysis_status == "failed":
-            await papers_db.update_analysis(
-                analysis_id=analysis_id, status="processing", error_message=None,
+        if not is_duplicate_for_user:
+            await papers_db.create_user_paper(paper_id, analysis_id, user_id=user_id)
+            await papers_db.consume_credit_for_paper(paper_id, user_id)
+        else:
+            logger.info(
+                "Duplicate arXiv import for user=%s analysis=%s; returning existing paper_id=%s",
+                user_id,
+                analysis_id,
+                paper_id,
             )
+
+        if _existing_needs_rerun(existing):
+            logger.info(
+                "Reprocessing existing analysis %s for arXiv:%s status=%s missing=%s",
+                analysis_id,
+                arxiv_id,
+                analysis_status,
+                existing.get("missing_artifacts", []),
+            )
+            await papers_db.reset_analysis_for_rerun(analysis_id)
             background_tasks.add_task(llm_service.trigger_arxiv_pipeline, analysis_id, paper_id, arxiv_id)
             return {"paper_id": paper_id, "status": "processing", "arxiv_id": arxiv_id}
         logger.info("Reusing existing analysis %s for arXiv:%s", analysis_id, arxiv_id)
@@ -318,6 +378,7 @@ async def arxiv_import(
     # ── New analysis: delegate fetch + pipeline to LLM service ───────────────
     # The LLM service fetches the PDF from arXiv itself, so the main backend
     # never needs to handle the PDF bytes for arXiv imports.
+    paper_id = papers_db.generate_paper_id()
     analysis_id = str(uuid.uuid4())
     await papers_db.create_analysis(analysis_id, arxiv_id=arxiv_id)
     await papers_db.create_user_paper(paper_id, analysis_id, user_id=user_id)
@@ -352,6 +413,52 @@ async def get_paper(paper_id: str) -> PaperRecord:
     if not row:
         raise HTTPException(status_code=404, detail=f"Paper {paper_id} not found")
     return _db_row_to_record(row)
+
+
+@router.post("/{paper_id}/rerun", summary="Rerun a failed or partial paper analysis")
+async def rerun_paper(
+    paper_id: str,
+    background_tasks: BackgroundTasks,
+    current_user: Optional[User] = Depends(get_optional_user),
+) -> dict:
+    """
+    Reset and rerun the shared analysis behind this paper card.
+    Does not consume credits. All users linked to the same analysis see updates.
+    """
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Sign in to rerun papers")
+
+    row = await papers_db.get_paper(paper_id)
+    if not row or row.get("user_id") != current_user.id:
+        raise HTTPException(status_code=404, detail=f"Paper {paper_id} not found")
+
+    analysis_id = row.get("analysis_id")
+    if not analysis_id:
+        raise HTTPException(status_code=400, detail="Paper analysis metadata is missing")
+
+    if row.get("status") == "processing":
+        return {"paper_id": paper_id, "status": "processing"}
+
+    arxiv_id = row.get("arxiv_id")
+    pdf_bytes = None
+    if not arxiv_id:
+        pdf_bytes = storage.download_pdf_for_paper(paper_id)
+        if not pdf_bytes:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Original PDF is not available for rerun. "
+                    "Upload the PDF again or import by arXiv ID."
+                ),
+            )
+
+    await papers_db.reset_analysis_for_rerun(analysis_id)
+    if arxiv_id:
+        background_tasks.add_task(llm_service.trigger_arxiv_pipeline, analysis_id, paper_id, arxiv_id)
+    else:
+        background_tasks.add_task(llm_service.trigger_pipeline, analysis_id, paper_id, pdf_bytes)
+    logger.info("Rerun queued for paper_id=%s analysis_id=%s", paper_id, analysis_id)
+    return {"paper_id": paper_id, "status": "processing"}
 
 
 @router.get("/{paper_id}/pdf-url", summary="Get a signed URL to view the uploaded PDF")

@@ -124,6 +124,37 @@ def download_file(bucket_path: str) -> Optional[bytes]:
         return None
 
 
+def get_bucket_path_for_paper(paper_id: str) -> Optional[str]:
+    """Look up the stored PDF bucket path for a paper_id, if available."""
+    sb = _client()
+    if sb is None:
+        return None
+
+    try:
+        for column, value in (("upload_id", f"{paper_id}_pdf"), ("program_id", paper_id)):
+            resp = (
+                sb.table(_TABLE)
+                .select("bucket_path")
+                .eq(column, value)
+                .order("uploaded_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            if resp.data:
+                return resp.data[0].get("bucket_path")
+    except Exception as exc:
+        logger.error("Bucket path lookup failed for paper %s: %s", paper_id, exc)
+    return None
+
+
+def download_pdf_for_paper(paper_id: str) -> Optional[bytes]:
+    """Download the original uploaded PDF bytes for a paper_id."""
+    bucket_path = get_bucket_path_for_paper(paper_id)
+    if not bucket_path:
+        return None
+    return download_file(bucket_path)
+
+
 # ── Metadata DB ───────────────────────────────────────────────────────────────
 
 

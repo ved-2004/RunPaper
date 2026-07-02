@@ -63,12 +63,13 @@ async def _lifespan(app: FastAPI):
     try:
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
         from api.routers.uploads import cleanup_expired
-        from api.routers.papers import mark_stale_papers_failed
+        from api.routers.papers import cleanup_failed_paper_entries, mark_stale_papers_failed
 
         scheduler = AsyncIOScheduler()
         scheduler.add_job(cleanup_expired, "interval", hours=24, id="cleanup_expired_uploads")
         # Check every 5 minutes for papers stuck in processing > 15 min
         scheduler.add_job(mark_stale_papers_failed, "interval", minutes=5, id="mark_stale_papers")
+        scheduler.add_job(cleanup_failed_paper_entries, "interval", minutes=5, id="cleanup_failed_papers")
         scheduler.start()
         logger.info("APScheduler started — stale-paper check every 5 min, upload cleanup every 24 h.")
         yield
