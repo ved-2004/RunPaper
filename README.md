@@ -33,14 +33,16 @@ Browser (port 3000)
 - Node.js 20+, Python 3.11+
 - Supabase project + Google OAuth2 credentials
 - LLM API key (Anthropic, OpenAI, or Gemini)
-- [honcho](https://honcho.readthedocs.io/) (`pip install honcho`)
 
 ### Install dependencies
 
 ```bash
-cd backend && python -m venv venv && venv\Scripts\activate && pip install -r requirements.txt
-cd frontend && npm install
-# Also set up RunPaper-llm — see its README
+cd ..
+python3.11 -m venv .venv
+.venv/bin/python -m pip install -r RunPaper/backend/requirements.txt -r RunPaper-llm/requirements.txt
+cd RunPaper
+npm install
+npm install --prefix frontend
 ```
 
 ### Configure
@@ -51,17 +53,23 @@ cd frontend && npm install
 
 ### Database setup
 
-Run all migration files in order in your Supabase SQL Editor (`backend/api/schemas/migrations/001` through `008`).
+Run all migration files in order in your Supabase SQL Editor (`backend/api/schemas/migrations/001` through latest). If your database is already partially migrated and errors with a missing current table such as `user_papers`, run `backend/api/schemas/migrations/012_repair_current_schema.sql` directly first, then rerun the migration command.
 
 ### Run everything
 
-From the repo root (where `Procfile` lives):
+From the `RunPaper` repo root:
 
 ```bash
-honcho start
+npm run dev
 ```
 
-Starts frontend (3000), backend (8000), and LLM service (8001) with colour-coded output.
+Starts frontend (3000), backend (8000), and the sibling `../RunPaper-llm` service (8001) with colour-coded output:
+
+- `frontend`: magenta
+- `backend`: blue
+- `llm`: yellow
+
+The Python services use the workspace-level `../.venv/bin/python`, local `.venv/bin/python`, local `venv/bin/python`, or `python3` in that order, and run Uvicorn with `--log-level info`, so app logs and pipeline timing logs print directly in the same terminal.
 
 ---
 
