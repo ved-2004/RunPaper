@@ -3,6 +3,20 @@
 -- New users receive 5 credits (1 credit = 1 paper analysis).
 -- Credits are deducted the first time a completed paper is fetched by the user.
 
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- If a database drifted and is missing users, do not fail before the repair
+-- migration can run.
+CREATE TABLE IF NOT EXISTS users (
+    id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    google_id      TEXT        UNIQUE,
+    email          TEXT,
+    name           TEXT,
+    avatar_url     TEXT,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_login_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- ── 1. Add credits to users ───────────────────────────────────────────────────
 ALTER TABLE users
     ADD COLUMN IF NOT EXISTS credits INT NOT NULL DEFAULT 5;
@@ -11,11 +25,16 @@ COMMENT ON COLUMN users.credits IS
     'Remaining paper analysis credits. Default 5 for new users. Admin-adjustable.';
 
 -- ── 2. Track whether a credit was consumed for each user_papers row ───────────
-ALTER TABLE user_papers
-    ADD COLUMN IF NOT EXISTS credit_consumed BOOLEAN NOT NULL DEFAULT false;
+DO $$
+BEGIN
+    IF to_regclass('public.user_papers') IS NOT NULL THEN
+        ALTER TABLE user_papers
+            ADD COLUMN IF NOT EXISTS credit_consumed BOOLEAN NOT NULL DEFAULT false;
 
-COMMENT ON COLUMN user_papers.credit_consumed IS
-    'True once 1 credit has been deducted for this paper (set on first complete fetch).';
+        COMMENT ON COLUMN user_papers.credit_consumed IS
+            'True once 1 credit has been deducted for this paper.';
+    END IF;
+END $$;
 
 -- ── 3. Feedback table ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS feedback (
