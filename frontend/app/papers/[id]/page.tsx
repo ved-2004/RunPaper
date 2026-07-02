@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { getPaper, getPdfUrl, downloadZip } from "@/lib/paperApi";
+import { getPaper, getPdfUrl, downloadZip, rerunPaper } from "@/lib/paperApi";
 import type { PaperSummary } from "@/types/paper";
 import AppLayout from "@/components/layout/AppLayout";
 import { useAuth } from "@/contexts/AuthContext";
@@ -12,7 +12,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   Loader2, AlertCircle, FileText, Code2, GitCompare,
-  Workflow, FileIcon, MessageSquare, Download,
+  Workflow, FileIcon, MessageSquare, Download, RefreshCw,
 } from "lucide-react";
 import { ExtractionTab } from "@/components/runpaper/ExtractionTab";
 import { CodeTab } from "@/components/runpaper/CodeTab";
@@ -77,6 +77,8 @@ export default function PaperPage() {
   const searchParams = useSearchParams();
   const defaultTab = searchParams.get("tab") ?? "learn";
   const [downloading, setDownloading] = useState(false);
+  const [rerunning, setRerunning] = useState(false);
+  const [rerunError, setRerunError] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const { refreshCredits } = useAuth();
 
@@ -92,6 +94,20 @@ export default function PaperPage() {
       URL.revokeObjectURL(url);
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const handleRerun = async () => {
+    setRerunning(true);
+    setRerunError(null);
+    try {
+      await rerunPaper(id);
+      await queryClient.invalidateQueries({ queryKey: ["paper", id] });
+      await queryClient.invalidateQueries({ queryKey: ["papers"] });
+    } catch (err) {
+      setRerunError(err instanceof Error ? err.message : "Failed to rerun paper");
+    } finally {
+      setRerunning(false);
     }
   };
 
@@ -151,7 +167,6 @@ export default function PaperPage() {
             </CardContent>
           </Card>
         ) : paper?.status === "processing" && !paper.extraction ? (
-          /* Extraction not yet done — show initial spinner */
           <Card>
             <CardContent className="py-16 text-center">
               <Loader2 className="h-10 w-10 mx-auto animate-spin text-primary mb-4" />
@@ -171,8 +186,18 @@ export default function PaperPage() {
                   ? "The pipeline took too long and was stopped. This can happen with very large or complex PDFs. Please try uploading again."
                   : (paper.error_message || "An error occurred during analysis.")}
               </p>
-              <Button asChild size="sm" variant="outline" className="mt-4">
-                <a href="/upload">Try again</a>
+              {rerunError && (
+                <p className="text-xs text-destructive mt-3 max-w-sm mx-auto">{rerunError}</p>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-4 gap-1.5"
+                onClick={handleRerun}
+                disabled={rerunning}
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${rerunning ? "animate-spin" : ""}`} />
+                Rerun
               </Button>
             </CardContent>
           </Card>
@@ -214,6 +239,30 @@ export default function PaperPage() {
                 </Button>
               )}
             </div>
+
+            {paper.status === "partial" && (
+              <Card className="mb-4 border-amber-500/30 bg-amber-500/5">
+                <CardContent className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium">Partial results available</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Some generated artifacts are missing. Rerun repairs the shared analysis without using another credit.
+                    </p>
+                    {rerunError && <p className="text-xs text-destructive mt-1">{rerunError}</p>}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0 gap-1.5"
+                    onClick={handleRerun}
+                    disabled={rerunning}
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${rerunning ? "animate-spin" : ""}`} />
+                    Rerun
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
 
             <Tabs defaultValue={defaultTab}>
               {/* Tabs scroll horizontally on mobile */}

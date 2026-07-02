@@ -87,6 +87,18 @@ export async function getPaper(paperId: string): Promise<PaperRecord> {
   return res.json();
 }
 
+export async function rerunPaper(paperId: string): Promise<{ paper_id: string; status: string }> {
+  const res = await fetch(`${API_BASE_URL}/api/papers/${paperId}/rerun`, {
+    method: "POST",
+    headers: _authHeaders(),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.detail || "Failed to rerun paper");
+  }
+  return res.json();
+}
+
 export async function listPapers(): Promise<PaperSummary[]> {
   const res = await fetch(`${API_BASE_URL}/api/papers`, { headers: _authHeaders() });
   if (!res.ok) throw new Error("Failed to fetch papers");

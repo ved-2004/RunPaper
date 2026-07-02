@@ -87,6 +87,7 @@ export interface FlowchartData {
 // ── Sanity badge ──────────────────────────────────────────────────────────────
 
 export type SanityStatus = "passed" | "warning" | "failed" | "skipped" | "pending";
+export type PaperStatus = "processing" | "complete" | "partial" | "failed";
 
 export interface SanityDetails {
   status: SanityStatus;
@@ -107,7 +108,7 @@ export interface PaperRecord {
   title: string | null;
   authors: string[] | null;
   uploaded_at: string;
-  status: "processing" | "complete" | "failed";
+  status: PaperStatus;
   extraction: PaperExtraction | null;
   code_scaffold: CodeScaffold | null;
   reproducibility: ReproducibilityItem[] | null;
@@ -123,6 +124,6 @@ export interface PaperSummary {
   title: string | null;
   authors: string[] | null;
   uploaded_at: string;
-  status: "processing" | "complete" | "failed";
+  status: PaperStatus;
   sanity_status?: SanityStatus | null;
 }

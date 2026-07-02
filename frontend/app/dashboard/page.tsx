@@ -4,9 +4,9 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useQuery } from "@tanstack/react-query";
-import { listPapers } from "@/lib/paperApi";
-import { ArrowRight, FileText, Upload } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { listPapers, rerunPaper } from "@/lib/paperApi";
+import { ArrowRight, FileText, RefreshCw, Upload } from "lucide-react";
 import Link from "next/link";
 import type { PaperSummary } from "@/types/paper";
 import { PaperListSkeleton } from "@/components/runpaper/PaperCardSkeleton";
@@ -14,11 +14,23 @@ import { SanityBadge } from "@/components/runpaper/SanityBadge";
 
 function statusBadge(status: PaperSummary["status"]) {
   if (status === "complete") return <Badge className="bg-green-500/10 text-green-600 border-green-500/20 dark:text-green-400">Complete</Badge>;
+  if (status === "partial") return <Badge className="bg-amber-500/10 text-amber-700 border-amber-500/20 dark:text-amber-300">Partial</Badge>;
   if (status === "processing") return <Badge variant="secondary">Processing…</Badge>;
   return <Badge variant="destructive">Failed</Badge>;
 }
 
-function PaperCard({ paper }: { paper: PaperSummary }) {
+function PaperCard({
+  paper,
+  onRerun,
+  isRerunning,
+}: {
+  paper: PaperSummary;
+  onRerun: (paperId: string) => void;
+  isRerunning: boolean;
+}) {
+  const canOpen = paper.status !== "processing";
+  const canRerun = paper.status === "partial" || paper.status === "failed";
+
   return (
     <Card className="hover:shadow-md transition-shadow">
       <CardContent className="p-4">
@@ -42,7 +54,19 @@ function PaperCard({ paper }: { paper: PaperSummary }) {
             {paper.status === "complete" && paper.sanity_status && (
               <SanityBadge status={paper.sanity_status} variant="compact" />
             )}
-            {paper.status === "complete" && (
+            {canRerun && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                onClick={() => onRerun(paper.paper_id)}
+                disabled={isRerunning}
+              >
+                <RefreshCw className={`h-3 w-3 ${isRerunning ? "animate-spin" : ""}`} />
+                Rerun
+              </Button>
+            )}
+            {canOpen && (
               <Button size="sm" variant="outline" asChild>
                 <Link href={`/papers/${paper.paper_id}`}>
                   View <ArrowRight className="ml-1.5 h-3 w-3" />
@@ -60,9 +84,18 @@ function PaperCard({ paper }: { paper: PaperSummary }) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
+  const queryClient = useQueryClient();
   const { data: papers = [], isLoading } = useQuery({
     queryKey: ["papers"],
     queryFn: listPapers,
+    refetchInterval: (query) =>
+      query.state.data?.some((paper) => paper.status === "processing") ? 3000 : false,
+  });
+  const rerunMutation = useMutation({
+    mutationFn: rerunPaper,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["papers"] });
+    },
   });
 
   return (
@@ -98,7 +131,12 @@ export default function DashboardPage() {
         ) : (
           <div className="space-y-3">
             {papers.map((paper) => (
-              <PaperCard key={paper.paper_id} paper={paper} />
+              <PaperCard
+                key={paper.paper_id}
+                paper={paper}
+                onRerun={(paperId) => rerunMutation.mutate(paperId)}
+                isRerunning={rerunMutation.variables === paper.paper_id && rerunMutation.isPending}
+              />
             ))}
           </div>
         )}
