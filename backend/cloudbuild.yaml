@@ -49,7 +49,7 @@ steps:
       - '--timeout=600'
       - '--max-instances=100'
       # Runtime env vars — safe to set here (not baked into image)
-      - '--set-env-vars=ENVIRONMENT=production,BACKEND_URL=${_BACKEND_URL},FRONTEND_URL=${_FRONTEND_URL},LLM_SERVICE_URL=${_LLM_SERVICE_URL},LLM_PROVIDER=anthropic'
+      - '--update-env-vars=ENVIRONMENT=production,BACKEND_URL=${_BACKEND_URL},FRONTEND_URL=${_FRONTEND_URL},LLM_SERVICE_URL=${_LLM_SERVICE_URL},LLM_PROVIDER=anthropic'
       # Secrets from Secret Manager — add your project ID
       # - '--set-secrets=SUPABASE_URL=runpaper-supabase-url:latest,SUPABASE_SERVICE_KEY=runpaper-supabase-key:latest,DATABASE_URL=runpaper-db-url:latest,GOOGLE_CLIENT_ID=runpaper-google-client-id:latest,GOOGLE_CLIENT_SECRET=runpaper-google-client-secret:latest,JWT_SECRET=runpaper-jwt-secret:latest,LLM_SERVICE_KEY=runpaper-llm-service-key:latest,SUPABASE_BUCKET=runpaper-supabase-bucket:latest'
     waitFor: ['push']

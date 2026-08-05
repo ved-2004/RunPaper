@@ -47,7 +47,7 @@ from api.services import papers_db
 from api.services import users_db
 from api.services import llm_service
 import api.services.storage as storage
-from api.routers.auth import get_optional_user
+from api.routers.auth import get_current_user
 from api.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -177,7 +177,7 @@ async def cleanup_failed_paper_entries(grace_minutes: int = 10) -> int:
 async def upload_and_analyze(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    current_user: Optional[User] = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """
     Upload a research paper PDF. Returns a paper_id immediately.
@@ -189,9 +189,6 @@ async def upload_and_analyze(
     Deduplicates by SHA-256 content hash: if the same PDF was already analysed,
     the existing analysis is reused and no LLM calls are made.
     """
-    if not current_user:
-        raise HTTPException(status_code=401, detail="Sign in to upload papers")
-
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
     if not file.filename.lower().endswith(".pdf"):
@@ -289,7 +286,7 @@ async def upload_and_analyze(
 async def arxiv_import(
     background_tasks: BackgroundTasks,
     body: dict = Body(...),
-    current_user: Optional[User] = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """
     Accept an arXiv URL or bare arXiv ID, fetch the PDF from arxiv.org,
@@ -304,9 +301,6 @@ async def arxiv_import(
     Body: { "arxiv_url": "https://arxiv.org/abs/2301.07041" }
           or  { "arxiv_url": "2301.07041" }
     """
-    if not current_user:
-        raise HTTPException(status_code=401, detail="Sign in to import papers")
-
     raw_input = (body.get("arxiv_url") or "").strip()
     if not raw_input:
         raise HTTPException(status_code=400, detail="arxiv_url is required")
@@ -391,10 +385,9 @@ async def arxiv_import(
 
 @router.get("", summary="List papers for the current user")
 async def list_papers(
-    current_user: Optional[User] = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
 ) -> list[PaperSummary]:
-    user_id = current_user.id if current_user else None
-    rows = await papers_db.list_user_papers(user_id=user_id)
+    rows = await papers_db.list_user_papers(user_id=current_user.id)
     return [
         PaperSummary(
             paper_id=r.get("paper_id", ""),
@@ -408,8 +401,11 @@ async def list_papers(
 
 
 @router.get("/{paper_id}", summary="Get paper results")
-async def get_paper(paper_id: str) -> PaperRecord:
-    row = await papers_db.get_paper(paper_id)
+async def get_paper(
+    paper_id: str,
+    current_user: User = Depends(get_current_user),
+) -> PaperRecord:
+    row = await papers_db.get_paper(paper_id, current_user.id)
     if not row:
         raise HTTPException(status_code=404, detail=f"Paper {paper_id} not found")
     return _db_row_to_record(row)
@@ -419,17 +415,14 @@ async def get_paper(paper_id: str) -> PaperRecord:
 async def rerun_paper(
     paper_id: str,
     background_tasks: BackgroundTasks,
-    current_user: Optional[User] = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """
     Reset and rerun the shared analysis behind this paper card.
     Does not consume credits. All users linked to the same analysis see updates.
     """
-    if not current_user:
-        raise HTTPException(status_code=401, detail="Sign in to rerun papers")
-
-    row = await papers_db.get_paper(paper_id)
-    if not row or row.get("user_id") != current_user.id:
+    row = await papers_db.get_paper(paper_id, current_user.id)
+    if not row:
         raise HTTPException(status_code=404, detail=f"Paper {paper_id} not found")
 
     analysis_id = row.get("analysis_id")
@@ -462,11 +455,18 @@ async def rerun_paper(
 
 
 @router.get("/{paper_id}/pdf-url", summary="Get a signed URL to view the uploaded PDF")
-async def get_pdf_url(paper_id: str) -> dict:
+async def get_pdf_url(
+    paper_id: str,
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """
     Returns a URL to view the original uploaded PDF.
     Tries Supabase Storage first, then falls back to arXiv if the paper has an arxiv_id.
     """
+    row = await papers_db.get_paper(paper_id, current_user.id)
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Paper {paper_id} not found")
+
     if storage.is_configured():
         sb = storage._client()
         if sb:
@@ -485,24 +485,26 @@ async def get_pdf_url(paper_id: str) -> dict:
             except Exception as exc:
                 logger.debug("PDF signed URL lookup failed: %s", exc)
 
-    row = await papers_db.get_paper(paper_id)
-    if row and row.get("arxiv_id"):
+    if row.get("arxiv_id"):
         return {"url": f"https://arxiv.org/pdf/{row['arxiv_id']}", "source": "arxiv"}
 
     raise HTTPException(status_code=404, detail="PDF not available for this paper")
 
 
 @router.delete("/{paper_id}", summary="Soft-delete a paper")
-async def delete_paper(paper_id: str) -> dict:
+async def delete_paper(
+    paper_id: str,
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """
     Soft-deletes a user's link to a paper by setting user_papers.deleted_at.
     The global paper_analyses row is preserved for other users.
     """
-    row = await papers_db.get_paper(paper_id)
+    row = await papers_db.get_paper(paper_id, current_user.id)
     if not row:
         raise HTTPException(status_code=404, detail=f"Paper {paper_id} not found")
 
-    ok = await papers_db.soft_delete_paper(paper_id)
+    ok = await papers_db.soft_delete_paper(paper_id, current_user.id)
     if not ok:
         raise HTTPException(status_code=500, detail="Failed to delete paper")
 
@@ -510,13 +512,16 @@ async def delete_paper(paper_id: str) -> dict:
 
 
 @router.get("/{paper_id}/notebook", summary="Download the generated Colab notebook (.ipynb)")
-async def download_notebook(paper_id: str) -> StreamingResponse:
+async def download_notebook(
+    paper_id: str,
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
     """
     Return the generated Jupyter notebook as a .ipynb file.
     Open the downloaded file in Google Colab (File → Open notebook → Upload)
     or run locally with: jupyter notebook
     """
-    row = await papers_db.get_paper(paper_id)
+    row = await papers_db.get_paper(paper_id, current_user.id)
     if not row:
         raise HTTPException(status_code=404, detail=f"Paper {paper_id} not found")
     if row.get("status") != "complete":
@@ -540,9 +545,12 @@ async def download_notebook(paper_id: str) -> StreamingResponse:
 
 
 @router.get("/{paper_id}/download", summary="Download code scaffold as .zip")
-async def download_zip(paper_id: str) -> StreamingResponse:
+async def download_zip(
+    paper_id: str,
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
     """Return a .zip archive containing model.py, train.py, config.yaml, requirements.txt."""
-    row = await papers_db.get_paper(paper_id)
+    row = await papers_db.get_paper(paper_id, current_user.id)
     if not row:
         raise HTTPException(status_code=404, detail=f"Paper {paper_id} not found")
     if row.get("status") != "complete":

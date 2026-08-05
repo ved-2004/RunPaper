@@ -8,11 +8,13 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from api.services import papers_db
 from api.services import llm_service
+from api.routers.auth import get_current_user
+from api.models.user import User
 
 logger = logging.getLogger(__name__)
 
@@ -61,8 +63,12 @@ class ExplainResponse(BaseModel):
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.post("/{paper_id}/explain", summary="Get an AI explanation for a specific item")
-async def explain(paper_id: str, req: ExplainRequest) -> ExplainResponse:
-    row = await papers_db.get_paper(paper_id)
+async def explain(
+    paper_id: str,
+    req: ExplainRequest,
+    current_user: User = Depends(get_current_user),
+) -> ExplainResponse:
+    row = await papers_db.get_paper(paper_id, current_user.id)
     if not row:
         raise HTTPException(status_code=404, detail="Paper not found")
 
@@ -79,8 +85,12 @@ async def explain(paper_id: str, req: ExplainRequest) -> ExplainResponse:
 
 
 @router.post("/{paper_id}/chat", summary="Send a chat message about the paper")
-async def chat(paper_id: str, req: ChatRequest) -> ChatResponse:
-    row = await papers_db.get_paper(paper_id)
+async def chat(
+    paper_id: str,
+    req: ChatRequest,
+    current_user: User = Depends(get_current_user),
+) -> ChatResponse:
+    row = await papers_db.get_paper(paper_id, current_user.id)
     if not row:
         raise HTTPException(status_code=404, detail="Paper not found")
     if row.get("status") != "complete":

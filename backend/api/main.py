@@ -21,6 +21,10 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 load_dotenv()
 
+from api.config import validate_runtime_config
+
+validate_runtime_config()
+
 # ── Sentry (error monitoring) ─────────────────────────────────────────────────
 # Gracefully disabled when SENTRY_DSN is not set.
 import os as _os
@@ -93,10 +97,6 @@ app.include_router(auth_router.router)
 # Uploads — cloud storage metadata + TTL management
 from api.routers import uploads as uploads_router
 app.include_router(uploads_router.router)
-
-# RAG layer (paper chunks retrieval)
-from api.routers import rag as rag_router
-app.include_router(rag_router.router)
 
 # Papers — PDF upload, analysis pipeline, results
 from api.routers import papers as papers_router

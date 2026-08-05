@@ -135,7 +135,7 @@ export default function PaperPage() {
 
   if (isLoading) {
     return (
-      <AppLayout requiresAuth={false}>
+      <AppLayout>
         {knownComplete ? (
           /* Paper already analyzed — brief fetch from DB, no need for generic skeleton */
           <div className="p-3 sm:p-6 max-w-[1400px] mx-auto">
@@ -157,7 +157,7 @@ export default function PaperPage() {
   }
 
   return (
-    <AppLayout requiresAuth={false}>
+    <AppLayout>
       <div className="p-3 sm:p-6 max-w-[1400px] mx-auto">
         {error ? (
           <Card>

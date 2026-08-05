@@ -106,7 +106,9 @@ export async function listPapers(): Promise<PaperSummary[]> {
 }
 
 export async function downloadZip(paperId: string): Promise<Blob> {
-  const res = await fetch(`${API_BASE_URL}/api/papers/${paperId}/download`);
+  const res = await fetch(`${API_BASE_URL}/api/papers/${paperId}/download`, {
+    headers: _authHeaders(),
+  });
   if (!res.ok) throw new Error("Download failed");
   return res.blob();
 }
@@ -114,7 +116,9 @@ export async function downloadZip(paperId: string): Promise<Blob> {
 export async function downloadNotebook(
   paperId: string,
 ): Promise<{ blob: Blob; filename: string }> {
-  const res = await fetch(`${API_BASE_URL}/api/papers/${paperId}/notebook`);
+  const res = await fetch(`${API_BASE_URL}/api/papers/${paperId}/notebook`, {
+    headers: _authHeaders(),
+  });
   if (!res.ok) throw new Error("Notebook not available");
   const blob = await res.blob();
   // Extract filename from Content-Disposition header if present
@@ -125,13 +129,18 @@ export async function downloadNotebook(
 }
 
 export async function getPdfUrl(paperId: string): Promise<{ url: string; source: string }> {
-  const res = await fetch(`${API_BASE_URL}/api/papers/${paperId}/pdf-url`);
+  const res = await fetch(`${API_BASE_URL}/api/papers/${paperId}/pdf-url`, {
+    headers: _authHeaders(),
+  });
   if (!res.ok) throw new Error("PDF not available");
   return res.json();
 }
 
 export async function deletePaper(paperId: string): Promise<void> {
-  const res = await fetch(`${API_BASE_URL}/api/papers/${paperId}`, { method: "DELETE" });
+  const res = await fetch(`${API_BASE_URL}/api/papers/${paperId}`, {
+    method: "DELETE",
+    headers: _authHeaders(),
+  });
   if (!res.ok) throw new Error("Failed to delete paper");
 }
 

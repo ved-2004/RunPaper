@@ -475,7 +475,7 @@ async def find_user_paper_by_analysis(user_id: str, analysis_id: str) -> Optiona
         return None
 
 
-async def get_paper(paper_id: str) -> Optional[dict]:
+async def get_paper(paper_id: str, user_id: str) -> Optional[dict]:
     """
     Fetch a paper by its paper_id.
     JOINs user_papers + paper_analyses and returns a flat dict.
@@ -483,7 +483,7 @@ async def get_paper(paper_id: str) -> Optional[dict]:
     sb = _client()
     if sb is None:
         up = _user_papers.get(paper_id)
-        if not up:
+        if not up or up.get("user_id") != user_id or up.get("deleted_at"):
             return None
         analysis = _analyses.get(up.get("analysis_id", ""), {})
         return _flatten(up, analysis)
@@ -493,6 +493,7 @@ async def get_paper(paper_id: str) -> Optional[dict]:
             sb.table("user_papers")
             .select("*, paper_analyses(*)")
             .eq("paper_id", paper_id)
+            .eq("user_id", user_id)
             .is_("deleted_at", "null")
             .single()
             .execute()
@@ -505,7 +506,7 @@ async def get_paper(paper_id: str) -> Optional[dict]:
     except Exception as exc:
         logger.error("get_paper failed for %s: %s", paper_id, exc)
         up = _user_papers.get(paper_id)
-        if up:
+        if up and up.get("user_id") == user_id and not up.get("deleted_at"):
             return _flatten(up, _analyses.get(up.get("analysis_id", ""), {}))
         return None
 
@@ -527,7 +528,7 @@ def _dedupe_user_paper_rows(rows: list[dict]) -> list[dict]:
     return sorted(deduped, key=lambda r: r.get("uploaded_at", ""), reverse=True)
 
 
-async def list_user_papers(user_id: Optional[str] = None) -> list[dict]:
+async def list_user_papers(user_id: str) -> list[dict]:
     """List non-deleted papers (summary columns only). Most recent first."""
     sb = _client()
     if sb is None:
@@ -535,7 +536,7 @@ async def list_user_papers(user_id: Optional[str] = None) -> list[dict]:
         for up in _user_papers.values():
             if up.get("deleted_at"):
                 continue
-            if user_id is not None and up.get("user_id") != user_id:
+            if up.get("user_id") != user_id:
                 continue
             analysis = _analyses.get(up.get("analysis_id", ""), {})
             results.append(_flatten(up, analysis))
@@ -551,8 +552,7 @@ async def list_user_papers(user_id: Optional[str] = None) -> list[dict]:
             )
             .is_("deleted_at", "null")
         )
-        if user_id is not None:
-            query = query.eq("user_id", user_id)
+        query = query.eq("user_id", user_id)
         resp = query.order("added_at", desc=True).execute()
         rows = []
         for row in (resp.data or []):
@@ -616,7 +616,7 @@ async def get_user_max_papers(user_id: str) -> int:
         return 5
 
 
-async def soft_delete_paper(paper_id: str) -> bool:
+async def soft_delete_paper(paper_id: str, user_id: str) -> bool:
     """
     Set user_papers.deleted_at. The global paper_analyses row is preserved
     so other users who submitted the same paper are unaffected.
@@ -624,13 +624,19 @@ async def soft_delete_paper(paper_id: str) -> bool:
     now = _now_iso()
     sb = _client()
     if sb is None:
-        if paper_id in _user_papers:
+        if paper_id in _user_papers and _user_papers[paper_id].get("user_id") == user_id:
             _user_papers[paper_id]["deleted_at"] = now
             return True
         return False
 
     try:
-        sb.table("user_papers").update({"deleted_at": now}).eq("paper_id", paper_id).execute()
+        (
+            sb.table("user_papers")
+            .update({"deleted_at": now})
+            .eq("paper_id", paper_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
         logger.info("user_paper %s soft-deleted", paper_id)
         return True
     except Exception as exc:
