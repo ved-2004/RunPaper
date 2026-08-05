@@ -3,7 +3,7 @@
 # ── Web framework ─────────────────────────────────────────
 fastapi>=0.115.0,<1.0
 uvicorn[standard]>=0.30.0
-python-multipart==0.0.9
+python-multipart==0.0.32
 
 # ── Data validation ───────────────────────────────────────
 pydantic==2.13.4
@@ -20,7 +20,7 @@ PyMuPDF==1.24.3           # PDF text extraction (fitz)
 httpx==0.28.1             # Async HTTP + test client
 
 # ── Auth ──────────────────────────────────────────────────
-python-jose[cryptography]==3.3.0   # JWT encode/decode
+PyJWT[crypto]==2.13.0             # JWT encode/decode
 
 # ── Cloud storage ──────────────────────────────────────────
 supabase==2.31.0                   # Supabase Python client (storage + DB)
@@ -28,10 +28,7 @@ psycopg2-binary==2.9.9             # Direct Postgres connection for migration ru
 apscheduler==3.10.4                # Scheduled TTL cleanup job
 
 # ── Utilities ─────────────────────────────────────────────
-python-dotenv==1.0.1
+python-dotenv==1.2.2
 
 # ── Error monitoring ───────────────────────────────────────
 sentry-sdk[fastapi]>=2.0.0    # Set SENTRY_DSN env var to enable; no-op if unset
-
-# ── RAG / Vector store ────────────────────────────────────
-chromadb>=0.5.0           # Persistent vector store + default ONNX embeddings

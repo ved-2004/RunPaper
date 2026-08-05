@@ -22,9 +22,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
+import jwt
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
-from jose import JWTError, jwt
+from jwt import InvalidTokenError
 
 from api.models.user import User, get_or_create_user, get_user_by_id
 
@@ -65,7 +66,7 @@ def _verify_jwt(token: str) -> str:
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token")
         return user_id
-    except JWTError:
+    except InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
