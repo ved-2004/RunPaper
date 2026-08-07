@@ -258,6 +258,14 @@ export default function LandingPage() {
           >
             Open source on GitHub
           </a>
+          {" · "}
+          <Link href="/privacy" className="hover:text-foreground transition-colors">
+            Privacy
+          </Link>
+          {" · "}
+          <Link href="/terms" className="hover:text-foreground transition-colors">
+            Terms
+          </Link>
         </p>
       </footer>
     </div>
