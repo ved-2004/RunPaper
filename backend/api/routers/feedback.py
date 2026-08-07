@@ -13,7 +13,7 @@ import os
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from api.routers.auth import get_current_user
 from api.models.user import User
@@ -27,11 +27,11 @@ _sb_client = None
 
 
 class FeedbackRequest(BaseModel):
-    name: str
-    role: str
-    organization: str
-    why_credits: str
-    improvements: str
+    name: str = Field(min_length=1, max_length=120)
+    role: str = Field(min_length=1, max_length=120)
+    organization: str = Field(min_length=1, max_length=200)
+    why_credits: str = Field(min_length=1, max_length=3000)
+    improvements: str = Field(min_length=1, max_length=3000)
 
 
 def _client():

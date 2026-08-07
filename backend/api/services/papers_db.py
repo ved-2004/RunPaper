@@ -98,6 +98,18 @@ def _public_status(analysis: dict) -> str:
     return status
 
 
+def _rpc_scalar(data: Any, default: Any = None) -> Any:
+    """Normalize scalar RPC responses across supabase-py/PostgREST versions."""
+    if isinstance(data, list):
+        if not data:
+            return default
+        first = data[0]
+        if isinstance(first, dict) and len(first) == 1:
+            return next(iter(first.values()))
+        return first
+    return default if data is None else data
+
+
 # ── paper_analyses helpers ────────────────────────────────────────────────────
 
 def _flatten(up_row: dict, analysis: dict) -> dict:
@@ -163,6 +175,61 @@ async def find_existing_analysis(
     except Exception as exc:
         logger.error("find_existing_analysis failed: %s", exc)
         return None
+
+
+async def get_or_create_analysis(
+    proposed_analysis_id: str,
+    arxiv_id: Optional[str] = None,
+    content_hash: Optional[str] = None,
+) -> tuple[dict, bool]:
+    """Atomically return a shared analysis or create it for the submitted paper."""
+    if not arxiv_id and not content_hash:
+        raise ValueError("arxiv_id or content_hash is required")
+
+    sb = _client()
+    if sb is None:
+        for row in _analyses.values():
+            if (arxiv_id and row.get("arxiv_id") == arxiv_id) or (
+                content_hash and row.get("content_hash") == content_hash
+            ):
+                row["request_count"] = row.get("request_count", 1) + 1
+                return _analysis_lookup_result(row), False
+
+        created = {
+            "analysis_id": proposed_analysis_id,
+            "status": "processing",
+            "first_processed_at": _now_iso(),
+            "request_count": 1,
+        }
+        if arxiv_id:
+            created["arxiv_id"] = arxiv_id
+        if content_hash:
+            created["content_hash"] = content_hash
+        _analyses[proposed_analysis_id] = created
+        return _analysis_lookup_result(created), True
+
+    try:
+        resp = sb.rpc(
+            "get_or_create_paper_analysis",
+            {
+                "p_proposed_analysis_id": proposed_analysis_id,
+                "p_arxiv_id": arxiv_id,
+                "p_content_hash": content_hash,
+            },
+        ).execute()
+        if not resp.data:
+            raise RuntimeError("get_or_create_paper_analysis returned no data")
+        result = dict(resp.data[0] if isinstance(resp.data, list) else resp.data)
+        row = {
+            "analysis_id": result["result_analysis_id"],
+            "status": result.get("result_status", "processing"),
+            "code_scaffold_json": result.get("result_code_scaffold"),
+            "flowchart_json": result.get("result_flowchart"),
+        }
+        return _analysis_lookup_result(row), bool(result.get("result_created"))
+    except Exception as exc:
+        logger.error("get_or_create_analysis failed: %s", exc)
+        raise
 
 
 async def create_analysis(
@@ -295,7 +362,7 @@ async def increment_request_count(analysis_id: str) -> None:
 
 
 async def reset_analysis_for_rerun(analysis_id: str) -> bool:
-    """Reset generated artifacts so a stale shared analysis can run again cleanly."""
+    """Atomically claim/reset a shared run and refund all charged active links."""
     updates: dict[str, Any] = {
         "status": "processing",
         "error_message": None,
@@ -306,6 +373,7 @@ async def reset_analysis_for_rerun(analysis_id: str) -> bool:
         "sanity_status": "pending",
         "sanity_details_json": None,
         "failed_at": None,
+        "first_processed_at": _now_iso(),
     }
 
     sb = _client()
@@ -316,25 +384,14 @@ async def reset_analysis_for_rerun(analysis_id: str) -> bool:
         return True
 
     try:
-        sb.table("paper_analyses").update(updates).eq("analysis_id", analysis_id).execute()
-        return True
+        resp = sb.rpc(
+            "claim_analysis_rerun",
+            {"p_analysis_id": analysis_id},
+        ).execute()
+        return bool(_rpc_scalar(resp.data, False))
     except Exception as exc:
-        retry_updates = dict(updates)
-        retry_updates.pop("failed_at", None)
-        try:
-            sb.table("paper_analyses").update(retry_updates).eq("analysis_id", analysis_id).execute()
-            logger.warning(
-                "reset_analysis_for_rerun retried without failed_at for %s; run migration 011",
-                analysis_id,
-            )
-            return True
-        except Exception:
-            pass
         logger.error("reset_analysis_for_rerun failed for %s: %s", analysis_id, exc)
-        existing = _analyses.get(analysis_id, {})
-        existing.update(updates)
-        _analyses[analysis_id] = existing
-        return False
+        raise RuntimeError("Could not claim analysis rerun") from exc
 
 
 # ── user_papers (per-user ownership) ─────────────────────────────────────────
@@ -368,6 +425,55 @@ async def create_user_paper(
         return False
 
 
+async def link_paper_and_consume_credit(
+    proposed_paper_id: str,
+    analysis_id: str,
+    user_id: str,
+) -> dict:
+    """Atomically reuse/create a user link and charge only a newly created link."""
+    sb = _client()
+    if sb is None:
+        existing = await find_user_paper_by_analysis(user_id, analysis_id)
+        if existing:
+            return {
+                "paper_id": existing["paper_id"],
+                "link_created": False,
+                "insufficient_credits": False,
+            }
+        from api.services import users_db
+        if users_db.get_credits(user_id) < 1:
+            return {"paper_id": None, "link_created": False, "insufficient_credits": True}
+        await create_user_paper(proposed_paper_id, analysis_id, user_id=user_id)
+        _user_papers[proposed_paper_id]["credit_consumed"] = True
+        users_db.deduct_credit(user_id)
+        return {
+            "paper_id": proposed_paper_id,
+            "link_created": True,
+            "insufficient_credits": False,
+        }
+
+    try:
+        resp = sb.rpc(
+            "link_paper_and_consume_credit",
+            {
+                "p_proposed_paper_id": proposed_paper_id,
+                "p_analysis_id": analysis_id,
+                "p_user_id": user_id,
+            },
+        ).execute()
+        if not resp.data:
+            raise RuntimeError("link_paper_and_consume_credit returned no data")
+        result = dict(resp.data[0] if isinstance(resp.data, list) else resp.data)
+        return {
+            "paper_id": result.get("result_paper_id"),
+            "link_created": bool(result.get("result_link_created")),
+            "insufficient_credits": bool(result.get("result_insufficient_credits")),
+        }
+    except Exception as exc:
+        logger.error("link_paper_and_consume_credit failed for %s/%s: %s", analysis_id, user_id, exc)
+        raise
+
+
 async def cleanup_failed_user_papers(grace_minutes: int = 10) -> int:
     """
     Soft-delete active user paper links whose shared analysis has stayed failed
@@ -394,39 +500,11 @@ async def cleanup_failed_user_papers(grace_minutes: int = 10) -> int:
         return cleaned
 
     try:
-        failed_resp = (
-            sb.table("paper_analyses")
-            .select("analysis_id")
-            .eq("status", "failed")
-            .lte("failed_at", cutoff.isoformat())
-            .execute()
-        )
-        analysis_ids = [row["analysis_id"] for row in (failed_resp.data or []) if row.get("analysis_id")]
-        if not analysis_ids:
-            return 0
-
-        links_resp = (
-            sb.table("user_papers")
-            .select("paper_id, user_id, credit_consumed")
-            .in_("analysis_id", analysis_ids)
-            .is_("deleted_at", "null")
-            .execute()
-        )
-        links = links_resp.data or []
-
-        from api.services import users_db
-        for link in links:
-            if link.get("credit_consumed") and link.get("user_id"):
-                users_db.refund_credit(link["user_id"])
-
-        update_resp = (
-            sb.table("user_papers")
-            .update({"deleted_at": now, "credit_consumed": False})
-            .in_("analysis_id", analysis_ids)
-            .is_("deleted_at", "null")
-            .execute()
-        )
-        return len(update_resp.data or links)
+        resp = sb.rpc(
+            "cleanup_failed_paper_entries",
+            {"p_grace_minutes": max(grace_minutes, 1)},
+        ).execute()
+        return int(_rpc_scalar(resp.data, 0))
     except Exception as exc:
         logger.error("cleanup_failed_user_papers failed: %s", exc)
         return 0

@@ -6,10 +6,10 @@ POST /api/papers/{paper_id}/chat  — live chat turn
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from api.services import papers_db
 from api.services import llm_service
@@ -24,14 +24,14 @@ router = APIRouter(prefix="/api/papers", tags=["chat"])
 # ── Request / response models ─────────────────────────────────────────────────
 
 class ChatMessage(BaseModel):
-    role: str   # "user" | "assistant"
-    content: str
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=6000)
 
 
 class ChatRequest(BaseModel):
-    message: str
-    history: list[ChatMessage] = []
-    mode: str = "direct"   # "direct" | "socratic"
+    message: str = Field(min_length=1, max_length=4000)
+    history: list[ChatMessage] = Field(default_factory=list, max_length=20)
+    mode: Literal["direct", "socratic"] = "direct"
 
 
 class CodeRef(BaseModel):
@@ -42,18 +42,18 @@ class CodeRef(BaseModel):
 
 class ChatResponse(BaseModel):
     answer: str
-    code_refs: list[CodeRef] = []
-    flowchart_refs: list[str] = []
+    code_refs: list[CodeRef] = Field(default_factory=list)
+    flowchart_refs: list[str] = Field(default_factory=list)
     follow_up: Optional[str] = None
 
 
 class ExplainRequest(BaseModel):
-    item_type: str   # flowchart_node | equation | hyperparameter | code_annotation
-    item_label: str
-    item_content: str
-    item_context: Optional[str] = None
-    paper_title: Optional[str] = None
-    extraction_summary: Optional[str] = None
+    item_type: Literal["flowchart_node", "equation", "hyperparameter", "code_annotation"]
+    item_label: str = Field(min_length=1, max_length=500)
+    item_content: str = Field(min_length=1, max_length=6000)
+    item_context: Optional[str] = Field(default=None, max_length=6000)
+    paper_title: Optional[str] = Field(default=None, max_length=500)
+    extraction_summary: Optional[str] = Field(default=None, max_length=12000)
 
 
 class ExplainResponse(BaseModel):

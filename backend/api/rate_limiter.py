@@ -4,8 +4,8 @@ api/rate_limiter.py
 Simple in-memory sliding-window rate limiter.
 
 Per-route limits:
-  - POST /api/papers/upload-and-analyze  →  5 requests / hour   (expensive LLM pipeline)
-  - POST /api/papers/*/chat              →  20 requests / minute (live chat)
+  - Paper analysis/rerun POSTs             →  5 requests / hour
+  - Chat/explain POSTs                     →  20 requests / minute
   - Everything else                      →  60 requests / minute (general API)
 
 Uses a deque per (ip, bucket) key. Old entries are evicted lazily on each request.
@@ -29,7 +29,7 @@ class _Bucket:
     timestamps: collections.deque = field(default_factory=collections.deque)
 
 
-# (ip, route_key) → Bucket
+# (authenticated user or trusted client IP, route_key) -> Bucket
 _store: dict[tuple[str, str], _Bucket] = {}
 _last_cleanup = time.time()
 _CLEANUP_INTERVAL = 600  # 10 minutes
@@ -37,11 +37,24 @@ _CLEANUP_INTERVAL = 600  # 10 minutes
 
 def _route_key(path: str, method: str) -> tuple[str, int, int]:
     """Return (bucket_name, max_requests, window_seconds) for a request."""
-    if method == "POST" and path == "/api/papers/upload-and-analyze":
-        return "upload", 5, 3600          # 5 uploads / hour
-    if method == "POST" and "/chat" in path:
-        return "chat", 20, 60             # 20 chat msgs / minute
-    return "general", 60, 60             # 60 req / minute
+    expensive_paths = ("/api/papers/upload-and-analyze", "/api/papers/arxiv-import")
+    if method == "POST" and (path in expensive_paths or path.endswith("/rerun")):
+        return "analysis", 5, 3600
+    if method == "POST" and (path.endswith("/chat") or path.endswith("/explain")):
+        return "llm_interaction", 20, 60
+    if method == "POST" and path == "/api/feedback":
+        return "feedback", 5, 3600
+    return "general", 60, 60
+
+
+def client_ip_from_forwarded(forwarded_for: str, fallback: str) -> str:
+    """Use the load balancer-appended client hop, not a spoofable leftmost hop."""
+    hops = [part.strip() for part in forwarded_for.split(",") if part.strip()]
+    if len(hops) >= 2:
+        return hops[-2]
+    if hops:
+        return hops[0]
+    return fallback or "unknown"
 
 
 def _cleanup():

@@ -88,6 +88,9 @@ app = FastAPI(
     description="Upload a research paper, get runnable Python code.",
     version="1.0.0",
     lifespan=_lifespan,
+    docs_url=None if os.getenv("ENVIRONMENT", "development") == "production" else "/docs",
+    redoc_url=None if os.getenv("ENVIRONMENT", "development") == "production" else "/redoc",
+    openapi_url=None if os.getenv("ENVIRONMENT", "development") == "production" else "/openapi.json",
 )
 
 # Auth — Google OAuth2 + JWT
@@ -102,7 +105,7 @@ app.include_router(uploads_router.router)
 from api.routers import papers as papers_router
 app.include_router(papers_router.router)
 
-# Chat — live Q&A + pre-generated FAQ over paper context
+# Chat — live Q&A over paper context
 from api.routers import chat as chat_router
 app.include_router(chat_router.router)
 
@@ -140,7 +143,8 @@ app.add_middleware(
 # Per-route sliding-window limits (see api/rate_limiter.py for thresholds):
 #   upload  → 5 / hour  | chat → 20 / min  | general → 60 / min
 
-from api.rate_limiter import check as _rl_check
+from api.rate_limiter import check as _rl_check, client_ip_from_forwarded
+from api.routers.auth import _verify_jwt
 
 
 @app.middleware("http")
@@ -148,14 +152,21 @@ async def rate_limit_middleware(request: Request, call_next):
     if request.url.path in ("/api/health", "/"):
         return await call_next(request)
 
-    client_ip = (
-        request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-        or (request.client.host if request.client else "unknown")
+    client_ip = client_ip_from_forwarded(
+        request.headers.get("X-Forwarded-For", ""),
+        request.client.host if request.client else "unknown",
     )
+    identifier = f"ip:{client_ip}"
+    authorization = request.headers.get("Authorization", "")
+    if authorization.startswith("Bearer "):
+        try:
+            identifier = f"user:{_verify_jwt(authorization[7:])}"
+        except Exception:
+            pass
 
-    retry_after = _rl_check(client_ip, request.url.path, request.method)
+    retry_after = _rl_check(identifier, request.url.path, request.method)
     if retry_after is not None:
-        logger.warning("Rate limit hit: ip=%s path=%s", client_ip, request.url.path)
+        logger.warning("Rate limit hit: identity=%s path=%s", identifier, request.url.path)
         return JSONResponse(
             status_code=429,
             content={"detail": "Too many requests. Please slow down."},
@@ -177,6 +188,12 @@ async def monitoring_middleware(request: Request, call_next):
     duration_ms = round((time.time() - start) * 1000, 2)
 
     response.headers["X-Request-ID"] = rid
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if os.getenv("ENVIRONMENT", "development") == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
     logger.info(
         "method=%s path=%s status=%s duration_ms=%s",
@@ -192,17 +209,8 @@ async def monitoring_middleware(request: Request, call_next):
 
 @app.get("/api/health")
 async def health():
-    llm_provider = os.environ.get("LLM_PROVIDER", "anthropic")
-    api_key_vars = {
-        "anthropic": "ANTHROPIC_API_KEY",
-        "openai": "OPENAI_API_KEY",
-        "gemini": "GEMINI_API_KEY",
-    }
-    key_var = api_key_vars.get(llm_provider, "ANTHROPIC_API_KEY")
     return {
         "status": "ok",
         "version": "1.0.0",
         "app": "RunPaper",
-        "llm_provider": llm_provider,
-        "api_key_configured": bool(os.environ.get(key_var)),
     }

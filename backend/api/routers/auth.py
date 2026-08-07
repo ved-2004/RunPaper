@@ -26,6 +26,7 @@ import jwt
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from jwt import InvalidTokenError
+from pydantic import BaseModel, Field
 
 from api.models.user import User, get_or_create_user, get_user_by_id
 
@@ -37,7 +38,7 @@ GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 JWT_SECRET = os.environ.get("JWT_SECRET", "change-me-in-production")
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRE_DAYS = 30
+JWT_EXPIRE_DAYS = 7
 
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000").rstrip("/")
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000").rstrip("/")
@@ -76,6 +77,15 @@ def _extract_token(request: Request) -> Optional[str]:
     if auth.startswith("Bearer "):
         return auth[7:]
     return None
+
+
+def _frontend_callback_url(token: str) -> str:
+    """Keep bearer credentials out of HTTP query strings and access logs."""
+    return f"{FRONTEND_URL}/auth/callback#token={urllib.parse.quote(token, safe='')}"
+
+
+class TrialMigrationRequest(BaseModel):
+    trial_id: str = Field(min_length=1, max_length=100)
 
 
 # ── Dependency ────────────────────────────────────────────────────────────────
@@ -189,9 +199,10 @@ async def google_callback(
     )
     jwt_token = _create_jwt(user.id)
 
-    # Redirect to frontend callback page with token as query param
+    # Put the token in the fragment so it is never sent in HTTP requests,
+    # referrers, proxy logs, or server access logs.
     dest = RedirectResponse(
-        url=f"{FRONTEND_URL}/auth/callback?token={jwt_token}",
+        url=_frontend_callback_url(jwt_token),
         status_code=302,
     )
     dest.delete_cookie("oauth_state")
@@ -212,7 +223,7 @@ async def logout():
 
 @router.post("/migrate-trial")
 async def migrate_trial(
-    body: dict,
+    body: TrialMigrationRequest,
     current_user: User = Depends(get_current_user),
 ):
     """
@@ -224,9 +235,7 @@ async def migrate_trial(
     Body: { "trial_id": "<uuid>" }
     Response: { "migrated": <int> }
     """
-    trial_id = (body.get("trial_id") or "").strip()
-    if not trial_id:
-        return {"migrated": 0}
+    trial_id = body.trial_id.strip()
 
     from api.services import papers_db
     count = await papers_db.migrate_trial_papers(trial_id=trial_id, user_id=current_user.id)

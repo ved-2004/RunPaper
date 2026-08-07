@@ -8,11 +8,6 @@ python-multipart==0.0.32
 # ── Data validation ───────────────────────────────────────
 pydantic==2.13.4
 
-# ── LLM providers (env-driven — see llm_client.py) ────────
-anthropic>=0.50.0            # LLM_PROVIDER=anthropic
-openai>=1.0.0                # LLM_PROVIDER=openai
-google-generativeai>=0.8.0   # LLM_PROVIDER=gemini
-
 # ── PDF parsing ───────────────────────────────────────────
 PyMuPDF==1.24.3           # PDF text extraction (fitz)
 

@@ -8,7 +8,7 @@ The main backend delegates all LLM work here:
   - trigger_arxiv_pipeline() → POST /analyze  (async, arXiv ID)
   - chat()                   → POST /chat     (sync, returns response)
 
-The LLM service runs the 5-step pipeline and writes results directly to
+The LLM service runs the analysis pipeline and writes results directly to
 Supabase paper_analyses. The main backend never imports LLM SDKs.
 """
 from __future__ import annotations
