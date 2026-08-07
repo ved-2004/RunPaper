@@ -47,6 +47,7 @@ steps:
       - '--allow-unauthenticated'
       - '--memory=2Gi'
       - '--timeout=600'
+      - '--no-cpu-throttling'
       - '--max-instances=100'
       # Runtime env vars — safe to set here (not baked into image)
       - '--update-env-vars=ENVIRONMENT=production,BACKEND_URL=${_BACKEND_URL},FRONTEND_URL=${_FRONTEND_URL},LLM_SERVICE_URL=${_LLM_SERVICE_URL}'

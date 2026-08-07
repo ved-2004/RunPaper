@@ -12,7 +12,7 @@ from api.rate_limiter import _route_key, client_ip_from_forwarded
 from api.routers.auth import _frontend_callback_url, get_current_user
 from api.routers.chat import ChatMessage, ChatRequest, ExplainRequest
 from api.routers.papers import _detect_arxiv_id_in_pdf
-from api.services import papers_db
+from api.services import llm_service, papers_db
 
 
 def _test_user() -> User:
@@ -166,3 +166,19 @@ def test_rerun_claim_and_failed_cleanup_use_scalar_rpcs(monkeypatch) -> None:
 
     assert claimed is True
     assert cleaned == 3
+
+
+def test_rejected_llm_trigger_marks_analysis_failed(monkeypatch) -> None:
+    updates: list[dict] = []
+
+    async def fake_update_analysis(**kwargs):
+        updates.append(kwargs)
+
+    monkeypatch.setattr(papers_db, "update_analysis", fake_update_analysis)
+    asyncio.run(llm_service._mark_trigger_failed("analysis-1"))
+
+    assert updates == [{
+        "analysis_id": "analysis-1",
+        "status": "failed",
+        "error_message": "Analysis service is temporarily unavailable. Please rerun the paper.",
+    }]

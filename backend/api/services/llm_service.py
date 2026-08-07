@@ -25,8 +25,9 @@ logger = logging.getLogger(__name__)
 _LLM_SERVICE_URL = os.getenv("LLM_SERVICE_URL", "http://localhost:8001")
 _LLM_SERVICE_KEY = os.getenv("LLM_SERVICE_KEY", "")
 
-# /analyze just queues the job — fast ACK expected
-_TRIGGER_TIMEOUT = 30
+# /analyze holds the internal request open while the pipeline runs. The public
+# upload endpoint still returns immediately because this call is a backend task.
+_TRIGGER_TIMEOUT = 450
 # /chat is a synchronous LLM call — needs more time
 _CHAT_TIMEOUT = 120
 
@@ -36,6 +37,20 @@ def _headers() -> dict[str, str]:
         "X-Service-Key": _LLM_SERVICE_KEY,
         "Content-Type": "application/json",
     }
+
+
+async def _mark_trigger_failed(analysis_id: str) -> None:
+    """Fail a job promptly when the LLM service could not accept it."""
+    from api.services import papers_db
+
+    try:
+        await papers_db.update_analysis(
+            analysis_id=analysis_id,
+            status="failed",
+            error_message="Analysis service is temporarily unavailable. Please rerun the paper.",
+        )
+    except Exception:
+        logger.exception("Could not mark rejected analysis as failed: %s", analysis_id)
 
 
 async def trigger_pipeline(
@@ -64,7 +79,7 @@ async def trigger_pipeline(
         logger.info("LLM service accepted pipeline for analysis_id=%s", analysis_id)
     except Exception as exc:
         logger.error("Failed to trigger pipeline: %s", exc)
-        raise
+        await _mark_trigger_failed(analysis_id)
 
 
 async def trigger_arxiv_pipeline(
@@ -92,7 +107,7 @@ async def trigger_arxiv_pipeline(
         logger.info("LLM service accepted arXiv pipeline for %s", arxiv_id)
     except Exception as exc:
         logger.error("Failed to trigger arXiv pipeline: %s", exc)
-        raise
+        await _mark_trigger_failed(analysis_id)
 
 
 async def explain(
