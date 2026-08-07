@@ -19,6 +19,7 @@ PyJWT[crypto]==2.13.0             # JWT encode/decode
 
 # ── Cloud storage ──────────────────────────────────────────
 supabase==2.31.0                   # Supabase Python client (storage + DB)
+websockets>=13,<16                 # Required by realtime 2.31's websockets.asyncio imports
 psycopg2-binary==2.9.9             # Direct Postgres connection for migration runner
 apscheduler==3.10.4                # Scheduled TTL cleanup job
 
