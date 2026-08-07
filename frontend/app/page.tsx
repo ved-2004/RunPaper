@@ -130,7 +130,7 @@ export default function LandingPage() {
           </p>
           <div className="grid sm:grid-cols-1 gap-5 max-w-lg mx-auto">
             <Step n={1} title="Upload any ML paper PDF" description="arXiv papers, conference submissions, preprints — anything with text." />
-            <Step n={2} title="AI extracts & generates" description="5-step pipeline: structure extraction → code scaffold → reproducibility audit → architecture flowchart → Q&A pairs. Takes 60–120 seconds." />
+            <Step n={2} title="AI extracts & generates" description="Parallel pipeline: structure extraction, code scaffold, reproducibility audit, architecture flowchart, notebook, and code sanity checks. Typically under 2 minutes." />
             <Step n={3} title="Explore, learn, and run" description="Interactive diagram, navigable code, PDF side-by-side, and a chat assistant — all grounded in your specific paper." />
           </div>
         </div>

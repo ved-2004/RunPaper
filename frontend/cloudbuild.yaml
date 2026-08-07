@@ -14,7 +14,7 @@ steps:
     id: 'write-env'
     args:
       - '-c'
-      - 'echo "NEXT_PUBLIC_API_BASE_URL=${_BACKEND_URL}" > frontend/.env.production'
+      - 'printf "NEXT_PUBLIC_API_BASE_URL=%s\nNEXT_PUBLIC_SENTRY_DSN=%s\n" "${_BACKEND_URL}" "${_SENTRY_DSN}" > frontend/.env.production'
 
   # Step 2: Build Docker image
   - name: 'gcr.io/cloud-builders/docker'
@@ -66,6 +66,7 @@ substitutions:
   _SERVICE_NAME: 'runpaper-frontend'
   _REGION: 'us-central1'
   _BACKEND_URL: 'https://runpaper-backend-352633166774.us-east1.run.app'
+  _SENTRY_DSN: ''
 
 timeout: '900s'
 

@@ -7,15 +7,10 @@ interface GoogleSignInButtonProps {
 }
 
 export function GoogleSignInButton({ className = "" }: GoogleSignInButtonProps) {
-  const handleClick = () => {
-    window.location.href = `${API_BASE_URL}/auth/google`;
-  };
-
   return (
-    <button
-      onClick={handleClick}
+    <a
+      href={`${API_BASE_URL}/auth/google`}
       className={`inline-flex items-center gap-3 rounded border border-[#dadce0] bg-white px-4 py-2.5 text-sm font-medium text-[#3c4043] shadow-sm transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4285F4] active:bg-[#f8f8f8] ${className}`}
-      type="button"
     >
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" className="h-5 w-5 shrink-0" aria-hidden="true">
         <path fill="#4285F4" d="M47.5 24.6c0-1.6-.1-3.1-.4-4.6H24v8.7h13.2c-.6 3-2.3 5.5-4.9 7.2v6h7.9c4.6-4.2 7.3-10.5 7.3-17.3z" />
@@ -24,6 +19,6 @@ export function GoogleSignInButton({ className = "" }: GoogleSignInButtonProps) 
         <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.5l6.7-6.7C35.9 2.4 30.4 0 24 0 14.7 0 6.5 5.4 2.6 13.1l8.1 6.2C12.6 13.7 17.8 9.5 24 9.5z" />
       </svg>
       Sign in with Google
-    </button>
+    </a>
   );
 }

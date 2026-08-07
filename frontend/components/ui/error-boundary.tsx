@@ -54,7 +54,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
           <div>
             <p className="text-sm font-medium">Failed to render this section</p>
             <p className="text-xs text-muted-foreground mt-1">
-              {this.state.error?.message || "An unexpected error occurred"}
+              Please try rendering it again.
             </p>
           </div>
           <Button

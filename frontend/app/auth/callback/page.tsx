@@ -1,45 +1,27 @@
 "use client";
 
 import { useEffect } from "react";
-import { useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
-import { Suspense } from "react";
 
-function AuthCallbackInner() {
-  const searchParams = useSearchParams();
-
+export default function AuthCallbackPage() {
   useEffect(() => {
-    const token = searchParams.get("token");
+    const fragment = new URLSearchParams(window.location.hash.slice(1));
+    const token = fragment.get("token");
+    window.history.replaceState({}, document.title, "/auth/callback");
+
     if (!token) {
-      window.location.href = "/";
+      window.location.replace("/");
       return;
     }
 
-    // Store token — AuthContext will pick it up on the next page render
     localStorage.setItem("access_token", token);
-
-    // Full reload so AuthContext re-initializes with the token already in localStorage.
-    // router.replace() does a client-side nav where AuthContext already ran fetchMe()
-    // before the token was stored — causing a user=null flash that redirects to /login.
-    window.location.href = "/dashboard";
-  }, [searchParams]);
+    window.location.replace("/dashboard");
+  }, []);
 
   return (
     <div className="min-h-screen flex items-center justify-center">
       <Loader2 className="h-6 w-6 animate-spin text-primary" />
       <span className="ml-2 text-sm text-muted-foreground">Signing in…</span>
     </div>
-  );
-}
-
-export default function AuthCallbackPage() {
-  return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-primary" />
-      </div>
-    }>
-      <AuthCallbackInner />
-    </Suspense>
   );
 }

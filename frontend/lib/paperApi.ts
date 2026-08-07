@@ -21,6 +21,13 @@ export class RateLimitError extends Error {
   }
 }
 
+function _throwIfRateLimited(res: Response): void {
+  if (res.status === 429) {
+    const retryAfter = parseInt(res.headers.get("Retry-After") ?? "60", 10);
+    throw new RateLimitError(Number.isFinite(retryAfter) ? retryAfter : 60);
+  }
+}
+
 function _authHeaders(): Record<string, string> {
   const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
   return token ? { Authorization: `Bearer ${token}` } : {};
@@ -43,10 +50,7 @@ export async function uploadAndAnalyze(file: File): Promise<{ paper_id: string }
     if (body?.code === "insufficient_credits") throw new InsufficientCreditsError();
   }
 
-  if (res.status === 429) {
-    const retryAfter = parseInt(res.headers.get("Retry-After") ?? "60", 10);
-    throw new RateLimitError(retryAfter);
-  }
+  _throwIfRateLimited(res);
 
   if (!res.ok) {
     const err = await res.text();
@@ -72,6 +76,8 @@ export async function importFromArxiv(
     if (body?.code === "insufficient_credits") throw new InsufficientCreditsError();
   }
 
+  _throwIfRateLimited(res);
+
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.detail || "Failed to import from arXiv");
@@ -92,6 +98,7 @@ export async function rerunPaper(paperId: string): Promise<{ paper_id: string; s
     method: "POST",
     headers: _authHeaders(),
   });
+  _throwIfRateLimited(res);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.detail || "Failed to rerun paper");

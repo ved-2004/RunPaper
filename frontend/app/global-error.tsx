@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle } from "lucide-react";
 
@@ -34,7 +35,7 @@ export default function GlobalError({
             </div>
             <h1 className="text-lg font-semibold">Something went wrong</h1>
             <p className="text-sm text-muted-foreground">
-              An unexpected error occurred. The team has been notified.
+              An unexpected error occurred. Please try again.
             </p>
             {error.digest && (
               <p className="text-xs text-muted-foreground/60 font-mono">
@@ -43,9 +44,7 @@ export default function GlobalError({
             )}
             <div className="flex gap-2 justify-center">
               <Button onClick={reset} size="sm">Try again</Button>
-              <Button variant="outline" size="sm" onClick={() => window.location.href = "/"}>
-                Go home
-              </Button>
+              <Button variant="outline" size="sm" asChild><Link href="/">Go home</Link></Button>
             </div>
           </div>
         </div>

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Cpu } from "lucide-react";
 
-const LAST_UPDATED = "April 15, 2025";
+const LAST_UPDATED = "August 6, 2026";
 const CONTACT_EMAIL = "privacy@runpaper.app";
 
 export default function PrivacyPage() {
@@ -50,10 +50,10 @@ export default function PrivacyPage() {
                 days and then deleted automatically.
               </li>
               <li>
-                <strong>Paper text.</strong> We extract the full text from your PDF and send up to
-                50 000 characters to our LLM provider (Anthropic) to generate structured analysis,
-                code scaffolds, and answers to your questions. We do not retain paper text in any
-                database; it is used only for the duration of the analysis request.
+                <strong>Paper content.</strong> We process up to the first 60 pages and send up to
+                40,000 characters of extracted text and up to five selected diagram images to our
+                LLM providers to generate structured analysis, code scaffolds, and diagrams. We do
+                not store the extracted source text as a separate database record.
               </li>
               <li>
                 <strong>Account information.</strong> If you sign in with Google, we store your
@@ -62,15 +62,23 @@ export default function PrivacyPage() {
                 account.
               </li>
               <li>
-                <strong>Chat messages.</strong> Questions you ask in the Chat tab are sent to our
-                LLM provider for answering. We store the Q&amp;A pairs in our database so the chat
-                history persists during your session; they are deleted when the associated paper is
-                deleted.
+                <strong>Chat messages.</strong> Questions you ask in the Chat tab, together with a
+                limited amount of recent chat history, are sent to an LLM provider for answering.
+                RunPaper does not persist chat history in its database; it is held in the current
+                browser page state.
               </li>
               <li>
                 <strong>Usage logs.</strong> Our servers log the HTTP method, path, response status,
-                and latency of each request (no request bodies). These logs are retained for 30 days
-                and are used only for debugging and abuse detection.
+                and latency of each request (not request bodies). Application logs are retained
+                according to our hosting configuration, generally for up to 30 days, and are used
+                for debugging, performance monitoring, and abuse detection.
+              </li>
+              <li>
+                <strong>Paper fingerprints and shared results.</strong> We calculate a SHA-256 hash
+                of uploaded PDF bytes, or use the arXiv ID, to detect a paper that has already been
+                processed. Generated analysis is stored in a shared cache and may be reused when
+                another user submits the same paper. Other users do not receive your account details,
+                original uploaded file, or chat messages.
               </li>
             </ul>
           </section>
@@ -84,6 +92,13 @@ export default function PrivacyPage() {
                 <a href="https://www.anthropic.com/privacy" target="_blank" rel="noopener noreferrer"
                   className="text-primary underline underline-offset-2">privacy policy</a> governs
                 their handling of API data. By default, Anthropic does not train on API data.
+              </li>
+              <li>
+                <strong>OpenAI</strong> — We use OpenAI&apos;s API for selected generation and validation
+                steps. OpenAI&apos;s{" "}
+                <a href="https://openai.com/policies/privacy-policy/" target="_blank" rel="noopener noreferrer"
+                  className="text-primary underline underline-offset-2">privacy policy</a> governs
+                its handling of API data.
               </li>
               <li>
                 <strong>Supabase</strong> — We use Supabase for database storage and file storage.
@@ -128,24 +143,25 @@ export default function PrivacyPage() {
             <h2 className="text-base font-semibold mb-3">5. Data retention</h2>
             <ul className="list-disc pl-5 space-y-2">
               <li>Uploaded PDFs: deleted within 30 days of upload.</li>
-              <li>Paper analysis results (extraction JSON, code scaffold, etc.): retained until you delete the paper.</li>
+              <li>Shared paper analysis results and fingerprints: retained as a reusable service cache with no fixed automatic deletion period.</li>
               <li>Account data: retained until you request deletion.</li>
-              <li>Server logs: retained for 30 days, then deleted automatically.</li>
+              <li>Application logs: generally retained for up to 30 days, subject to hosting and security requirements.</li>
             </ul>
           </section>
 
           <section>
             <h2 className="text-base font-semibold mb-3">6. Your rights</h2>
             <p>
-              You may request deletion of your account and all associated data at any time by
+              You may request deletion of your account and account-associated data at any time by
               emailing us at{" "}
               <a href={`mailto:${CONTACT_EMAIL}`} className="text-primary underline underline-offset-2">
                 {CONTACT_EMAIL}
               </a>. We will respond within 30 days.
             </p>
             <p className="mt-2">
-              You can delete individual papers at any time from your dashboard. Deleted papers are
-              soft-deleted (marked as deleted) and permanently removed after 30 days.
+              You can remove individual papers from your dashboard at any time. This removes your
+              account&apos;s link to the paper. The shared, de-identified analysis cache and paper
+              fingerprint may remain so that RunPaper can avoid processing the same paper again.
             </p>
           </section>
 

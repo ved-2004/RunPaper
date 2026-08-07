@@ -1,7 +1,6 @@
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { TexMath } from "@/components/ui/katex-math";
 import { ExternalLink } from "lucide-react";
 import type { PaperExtraction, FlowchartData } from "@/types/paper";

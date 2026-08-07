@@ -6,6 +6,7 @@ if (dsn) {
   Sentry.init({
     dsn,
     tracesSampleRate: 0.2,
+    sendDefaultPii: false,
     environment: process.env.NODE_ENV,
   });
 }

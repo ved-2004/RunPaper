@@ -68,7 +68,7 @@ export default function SettingsPage() {
           <CardContent className="space-y-3 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Pipeline</span>
-              <span className="font-medium">5-step async (extract → codegen → repro → flowchart → FAQ)</span>
+              <span className="font-medium">Parallel (extract → code + repro → flowchart → notebook + sanity)</span>
             </div>
             <Separator />
             <div className="flex justify-between">

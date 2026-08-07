@@ -1,9 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import type { SanityStatus, SanityDetails } from "@/types/paper";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Popover,
   PopoverContent,

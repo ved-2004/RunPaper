@@ -110,11 +110,12 @@ function NodeDrawer({ selected, onClose, snippet, styles, paperId, flowchart, ex
   const dragging = useRef(false);
   const startX = useRef(0);
   const startWidth = useRef(DRAWER_DEFAULT);
+  const selectedId = selected?.id;
 
   // Reset width when a different node is selected
   useEffect(() => {
-    if (selected) setWidth(DRAWER_DEFAULT);
-  }, [selected?.id]);
+    if (selectedId) setWidth(DRAWER_DEFAULT);
+  }, [selectedId]);
 
   const onHandleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();

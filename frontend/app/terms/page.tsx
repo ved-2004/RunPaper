@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Cpu } from "lucide-react";
 
-const LAST_UPDATED = "April 15, 2025";
+const LAST_UPDATED = "August 6, 2026";
 const CONTACT_EMAIL = "hello@runpaper.app";
 
 export default function TermsPage() {
@@ -74,7 +74,7 @@ export default function TermsPage() {
               <li>Attempt to reverse-engineer, scrape, or circumvent any security measures.</li>
               <li>Use the Service for any unlawful purpose.</li>
               <li>Create multiple accounts to circumvent the credit system.</li>
-              <li>Upload documents exceeding 50 MB or that are not PDF files.</li>
+              <li>Upload documents exceeding 20 MB or that are not PDF files.</li>
             </ul>
           </section>
 
@@ -82,8 +82,10 @@ export default function TermsPage() {
             <h2 className="text-base font-semibold mb-3">5. Your content</h2>
             <p>
               You retain all rights to documents you upload. By uploading a document, you grant
-              RunPaper a limited, non-exclusive licence to process the document solely for the
-              purpose of providing the Service to you.
+              RunPaper a limited, non-exclusive licence to process the document for the purpose of
+              providing the Service. RunPaper may retain a fingerprint and generated analysis and
+              reuse that analysis when another user independently submits the same paper; your
+              account information, original upload, and chat messages are not shared with them.
             </p>
             <p className="mt-2">
               You represent that you have the right to upload documents you submit (e.g., the paper
@@ -131,7 +133,7 @@ export default function TermsPage() {
           <section>
             <h2 className="text-base font-semibold mb-3">9. Third-party services</h2>
             <p>
-              The Service integrates with third-party services (Anthropic, Supabase, Google, arXiv).
+              The Service integrates with third-party services (Anthropic, OpenAI, Supabase, Google, arXiv).
               Your use of those services is subject to their respective terms and policies. We are
               not responsible for any third-party service&apos;s actions, availability, or data
               handling.

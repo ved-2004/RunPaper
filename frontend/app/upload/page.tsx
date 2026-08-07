@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 // ── Upload page ───────────────────────────────────────────────────────────────
 
 type InputMode = "pdf" | "arxiv";
+const MAX_PDF_BYTES = 20 * 1024 * 1024;
 
 export default function UploadPage() {
   const router = useRouter();
@@ -33,8 +34,13 @@ export default function UploadPage() {
   // ── PDF handlers ─────────────────────────────────────────────────────────────
 
   const handleFile = (file: File) => {
-    if (!file.name.endsWith(".pdf")) {
+    if (!file.name.toLowerCase().endsWith(".pdf")) {
       setError("Only PDF files are supported.");
+      return;
+    }
+    if (file.size > MAX_PDF_BYTES) {
+      setError("PDF must be 20 MB or smaller.");
+      setSelectedFile(null);
       return;
     }
     setError(null);
@@ -147,7 +153,7 @@ export default function UploadPage() {
               <CardHeader>
                 <CardTitle className="text-base">Upload PDF</CardTitle>
                 <CardDescription>
-                  Supports arXiv PDFs and published ML/AI papers. Max 50 MB.
+                  Supports arXiv PDFs and published ML/AI papers. Max 20 MB.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -204,7 +210,7 @@ export default function UploadPage() {
                 </Button>
 
                 <p className="text-xs text-muted-foreground text-center">
-                  Analysis takes 30–90 seconds depending on paper complexity.
+                  Analysis typically completes in under 2 minutes.
                 </p>
               </CardContent>
             </>
@@ -267,7 +273,7 @@ export default function UploadPage() {
                 </Button>
 
                 <p className="text-xs text-muted-foreground text-center">
-                  The PDF is fetched directly from arxiv.org. Analysis takes 30–90 seconds.
+                  The PDF is fetched directly from arxiv.org. Analysis typically completes in under 2 minutes.
                 </p>
               </CardContent>
             </>
