@@ -335,6 +335,35 @@ async def update_analysis(
         return False
 
 
+async def fail_analysis_if_processing(analysis_id: str, error_message: str) -> bool:
+    """Atomically fail a processing analysis without downgrading completed work."""
+    updates = {
+        "status": "failed",
+        "failed_at": _now_iso(),
+        "error_message": error_message,
+    }
+    sb = _client()
+    if sb is None:
+        existing = _analyses.get(analysis_id)
+        if not existing or existing.get("status") != "processing":
+            return False
+        existing.update(updates)
+        return True
+
+    try:
+        resp = (
+            sb.table("paper_analyses")
+            .update(updates)
+            .eq("analysis_id", analysis_id)
+            .eq("status", "processing")
+            .execute()
+        )
+        return bool(resp.data)
+    except Exception as exc:
+        logger.error("fail_analysis_if_processing failed for %s: %s", analysis_id, exc)
+        return False
+
+
 async def increment_request_count(analysis_id: str) -> None:
     """Bump request_count each time a new user submits the same paper."""
     sb = _client()

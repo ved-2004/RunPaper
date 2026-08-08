@@ -169,16 +169,41 @@ def test_rerun_claim_and_failed_cleanup_use_scalar_rpcs(monkeypatch) -> None:
 
 
 def test_rejected_llm_trigger_marks_analysis_failed(monkeypatch) -> None:
-    updates: list[dict] = []
+    updates: list[tuple[str, str]] = []
 
-    async def fake_update_analysis(**kwargs):
-        updates.append(kwargs)
+    async def fake_fail_if_processing(analysis_id, error_message):
+        updates.append((analysis_id, error_message))
+        return True
 
-    monkeypatch.setattr(papers_db, "update_analysis", fake_update_analysis)
+    monkeypatch.setattr(papers_db, "fail_analysis_if_processing", fake_fail_if_processing)
     asyncio.run(llm_service._mark_trigger_failed("analysis-1"))
 
-    assert updates == [{
-        "analysis_id": "analysis-1",
-        "status": "failed",
-        "error_message": "Analysis service is temporarily unavailable. Please rerun the paper.",
-    }]
+    assert updates == [(
+        "analysis-1",
+        "Analysis service is temporarily unavailable. Please rerun the paper.",
+    )]
+
+
+def test_transport_failure_does_not_downgrade_complete_in_memory(monkeypatch) -> None:
+    monkeypatch.setattr(papers_db, "_client", lambda: None)
+    papers_db._analyses["analysis-complete"] = {"status": "complete"}
+
+    changed = asyncio.run(
+        papers_db.fail_analysis_if_processing("analysis-complete", "transport failed")
+    )
+
+    assert changed is False
+    assert papers_db._analyses["analysis-complete"]["status"] == "complete"
+    papers_db._analyses.pop("analysis-complete", None)
+
+
+def test_llm_pipeline_result_logs_failure(caplog) -> None:
+    class _Response:
+        @staticmethod
+        def json():
+            return {"accepted": True, "completed": False}
+
+    with caplog.at_level("WARNING"):
+        llm_service._log_pipeline_result(_Response(), "analysis-1")
+
+    assert "LLM pipeline finished with failure analysis_id=analysis-1" in caplog.text

@@ -4,8 +4,8 @@ api/services/llm_service.py
 HTTP client for the RunPaper LLM service.
 
 The main backend delegates all LLM work here:
-  - trigger_pipeline()       → POST /analyze  (async, PDF bytes)
-  - trigger_arxiv_pipeline() → POST /analyze  (async, arXiv ID)
+  - trigger_pipeline()       → POST /analyze  (PDF bytes)
+  - trigger_arxiv_pipeline() → POST /analyze  (arXiv ID)
   - chat()                   → POST /chat     (sync, returns response)
 
 The LLM service runs the analysis pipeline and writes results directly to
@@ -39,15 +39,34 @@ def _headers() -> dict[str, str]:
     }
 
 
+def _log_pipeline_result(resp: httpx.Response, analysis_id: str) -> None:
+    """Log the completed pipeline result while tolerating an older LLM revision."""
+    try:
+        payload = resp.json()
+    except ValueError:
+        logger.warning("LLM pipeline returned non-JSON response analysis_id=%s", analysis_id)
+        return
+
+    completed = payload.get("completed")
+    if completed is True:
+        logger.info("LLM pipeline completed analysis_id=%s", analysis_id)
+    elif completed is False:
+        logger.warning("LLM pipeline finished with failure analysis_id=%s", analysis_id)
+    else:
+        logger.info(
+            "LLM pipeline request finished analysis_id=%s completed=unknown",
+            analysis_id,
+        )
+
+
 async def _mark_trigger_failed(analysis_id: str) -> None:
     """Fail a job promptly when the LLM service could not accept it."""
     from api.services import papers_db
 
     try:
-        await papers_db.update_analysis(
-            analysis_id=analysis_id,
-            status="failed",
-            error_message="Analysis service is temporarily unavailable. Please rerun the paper.",
+        await papers_db.fail_analysis_if_processing(
+            analysis_id,
+            "Analysis service is temporarily unavailable. Please rerun the paper.",
         )
     except Exception:
         logger.exception("Could not mark rejected analysis as failed: %s", analysis_id)
@@ -59,8 +78,8 @@ async def trigger_pipeline(
     pdf_bytes: bytes,
 ) -> None:
     """
-    Tell the LLM service to start the analysis pipeline for a PDF upload.
-    Returns as soon as the service accepts the job (pipeline runs in the background there).
+    Tell the LLM service to run the analysis pipeline for a PDF upload.
+    This runs inside a backend background task and returns when the LLM service finishes.
     """
     pdf_b64 = base64.b64encode(pdf_bytes).decode()
     try:
@@ -76,7 +95,7 @@ async def trigger_pipeline(
                 },
             )
             resp.raise_for_status()
-        logger.info("LLM service accepted pipeline for analysis_id=%s", analysis_id)
+        _log_pipeline_result(resp, analysis_id)
     except Exception as exc:
         logger.error("Failed to trigger pipeline: %s", exc)
         await _mark_trigger_failed(analysis_id)
@@ -104,7 +123,7 @@ async def trigger_arxiv_pipeline(
                 },
             )
             resp.raise_for_status()
-        logger.info("LLM service accepted arXiv pipeline for %s", arxiv_id)
+        _log_pipeline_result(resp, analysis_id)
     except Exception as exc:
         logger.error("Failed to trigger arXiv pipeline: %s", exc)
         await _mark_trigger_failed(analysis_id)
