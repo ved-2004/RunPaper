@@ -4,9 +4,9 @@
   "scripts": {
     "dev": "npm run dev:all",
     "dev:all": "concurrently -n frontend,backend,llm -c magenta.bold,blue.bold,yellow.bold --prefix \"[{name}]\" --kill-others-on-fail \"npm run dev:frontend\" \"npm run dev:backend\" \"npm run dev:llm\"",
-    "dev:frontend": "npm --prefix frontend run dev -- -H 127.0.0.1 -p 3000",
-    "dev:backend": "sh scripts/dev-python-module.sh backend 8000",
-    "dev:llm": "sh scripts/dev-python-module.sh ../RunPaper-llm 8001"
+    "dev:frontend": "NEXT_PUBLIC_API_BASE_URL=http://localhost:${RUNPAPER_BACKEND_PORT:-8000} npm --prefix frontend run dev -- -H 0.0.0.0 -p ${RUNPAPER_FRONTEND_PORT:-3100}",
+    "dev:backend": "BACKEND_URL=http://localhost:${RUNPAPER_BACKEND_PORT:-8000} FRONTEND_URL=http://localhost:${RUNPAPER_FRONTEND_PORT:-3100} LLM_SERVICE_URL=http://127.0.0.1:${RUNPAPER_LLM_PORT:-8001} sh scripts/dev-python-module.sh backend ${RUNPAPER_BACKEND_PORT:-8000}",
+    "dev:llm": "sh scripts/dev-python-module.sh ../RunPaper-llm ${RUNPAPER_LLM_PORT:-8001}"
   },
   "devDependencies": {
     "concurrently": "^9.0.0"

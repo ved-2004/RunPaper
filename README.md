@@ -22,7 +22,7 @@ Plus: **Explain panel** — click any equation, hyperparameter, flowchart node, 
 Three services work together. The LLM pipeline lives in a companion repo ([`RunPaper-llm`](../RunPaper-llm/)):
 
 ```
-Browser (port 3000)
+Browser (port 3100 by default)
   └─► Backend API (port 8000)   ← auth, DB, file storage, routing
         └─► LLM Service (port 8001)   ← pipeline, chat, explain
 ```
@@ -63,11 +63,23 @@ From the `RunPaper` repo root:
 npm run dev
 ```
 
-Starts frontend (3000), backend (8000), and the sibling `../RunPaper-llm` service (8001) with colour-coded output:
+Starts frontend (3100), backend (8000), and the sibling `../RunPaper-llm` service (8001) with colour-coded output:
 
 - `frontend`: magenta
 - `backend`: blue
 - `llm`: yellow
+
+Open `http://localhost:3100` for local authentication. The frontend also listens
+on `127.0.0.1:3100`, but using one hostname consistently avoids OAuth cookie issues.
+
+Override any local port when another project needs it:
+
+```bash
+RUNPAPER_FRONTEND_PORT=3200 RUNPAPER_BACKEND_PORT=8100 RUNPAPER_LLM_PORT=8101 npm run dev
+```
+
+Changing the backend port also requires the matching Google OAuth callback URL
+to be authorized, so keep the default `8000` unless that URI is configured.
 
 The Python services use the workspace-level `../.venv/bin/python`, local `.venv/bin/python`, local `venv/bin/python`, or `python3` in that order, and run Uvicorn with `--log-level info`, so app logs and pipeline timing logs print directly in the same terminal.
 
