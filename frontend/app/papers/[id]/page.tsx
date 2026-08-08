@@ -276,6 +276,10 @@ export default function PaperPage() {
                     <Code2 className="h-3.5 w-3.5" />
                     Code
                   </TabsTrigger>
+                  <TabsTrigger value="reproducibility" className="gap-1.5">
+                    <GitCompare className="h-3.5 w-3.5" />
+                    Reproduce
+                  </TabsTrigger>
                   <TabsTrigger value="paper" className="gap-1.5">
                     <FileIcon className="h-3.5 w-3.5" />
                     Paper
@@ -283,11 +287,6 @@ export default function PaperPage() {
                   <TabsTrigger value="extraction" className="gap-1.5">
                     <FileText className="h-3.5 w-3.5" />
                     Extraction
-                  </TabsTrigger>
-                  <TabsTrigger value="reproducibility" className="gap-1.5">
-                    <GitCompare className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">Reproducibility</span>
-                    <span className="sm:hidden">Repro</span>
                   </TabsTrigger>
                   <TabsTrigger value="chat" className="gap-1.5">
                     <MessageSquare className="h-3.5 w-3.5" />
